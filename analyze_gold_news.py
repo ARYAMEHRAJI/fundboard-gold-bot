@@ -27,7 +27,7 @@ NEWS_QUERY = (
 
 MODEL = "@cf/qwen/qwen3.8-27b"
 
-REQUEST_TIMEOUT = 180
+REQUEST_TIMEOUT = 120
 MAX_ATTEMPTS = 3
 MAX_ARTICLES_FOR_ANALYSIS = 8
 
@@ -39,7 +39,6 @@ GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 # ============================================================
 
 def clean_text(value):
-    """Remove HTML tags and normalize whitespace."""
     if not value:
         return ""
 
@@ -51,7 +50,6 @@ def clean_text(value):
 
 
 def get_source_name(article):
-    """Return a readable publisher name."""
     source = article.get("source", "")
 
     if isinstance(source, dict):
@@ -60,16 +58,15 @@ def get_source_name(article):
     if source:
         return clean_text(source)
 
-    link = article.get("link", "")
-
     try:
-        return urlparse(link).netloc.replace("www.", "")
+        return urlparse(
+            article.get("link", "")
+        ).netloc.replace("www.", "")
     except Exception:
         return "Unknown"
 
 
 def parse_date(value):
-    """Parse an RSS publication date into a timezone-aware datetime."""
     if not value:
         return None
 
@@ -90,9 +87,14 @@ def parse_date(value):
 # ============================================================
 
 def is_relevant_article(article):
-    """Filter out articles that are not meaningfully about gold."""
-    title = clean_text(article.get("title", "")).lower()
-    summary = clean_text(article.get("summary", "")).lower()
+    title = clean_text(
+        article.get("title", "")
+    ).lower()
+
+    summary = clean_text(
+        article.get("summary", "")
+    ).lower()
+
     text = f"{title} {summary}"
 
     gold_terms = (
@@ -111,8 +113,6 @@ def is_relevant_article(article):
         "golden globes",
         "gold medal",
         "gold award",
-        "gold jewelry",
-        "gold jewellery",
         "golden retriever",
     )
 
@@ -123,7 +123,6 @@ def is_relevant_article(article):
 
 
 def fetch_news():
-    """Fetch recent gold-market news from Google News RSS."""
     params = {
         "q": NEWS_QUERY,
         "hl": "en-US",
@@ -178,6 +177,7 @@ def fetch_news():
                 )
 
                 source_element = item.find("source")
+
                 source = (
                     clean_text(source_element.text)
                     if source_element is not None
@@ -198,14 +198,17 @@ def fetch_news():
                 if is_relevant_article(article):
                     articles.append(article)
 
-            print(f"Relevant articles fetched: {len(articles)}")
+            print(
+                f"Relevant articles fetched: {len(articles)}"
+            )
+
             return articles
 
         except Exception as exc:
             last_error = exc
 
             print(
-                f"News RSS attempt {attempt}/"
+                f"RSS attempt {attempt}/"
                 f"{MAX_ATTEMPTS} failed: {exc}"
             )
 
@@ -222,10 +225,6 @@ def fetch_news():
 # ============================================================
 
 def select_relevant_news(articles):
-    """
-    Keep recent articles, prioritize distinct publishers,
-    and avoid duplicate links and headlines.
-    """
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=36)
 
@@ -241,6 +240,7 @@ def select_relevant_news(articles):
             continue
 
         normalized_link = link.rstrip("/").lower()
+
         normalized_title = re.sub(
             r"[^a-z0-9]+",
             "",
@@ -264,9 +264,9 @@ def select_relevant_news(articles):
             continue
 
         article["source"] = get_source_name(article)
+
         candidates.append(article)
 
-    # Prefer the newest articles when publication dates are available.
     candidates.sort(
         key=lambda item: (
             parse_date(item.get("published", "")) is not None,
@@ -276,13 +276,15 @@ def select_relevant_news(articles):
         reverse=True,
     )
 
-    # First select one article per source.
     selected = []
     selected_links = set()
     selected_sources = set()
 
+    # First pass: prefer different publishers.
     for article in candidates:
-        source = article.get("source", "Unknown").lower()
+        source = article.get(
+            "source", "Unknown"
+        ).lower()
 
         if source not in selected_sources:
             selected.append(article)
@@ -292,7 +294,7 @@ def select_relevant_news(articles):
         if len(selected) >= MAX_ARTICLES_FOR_ANALYSIS:
             break
 
-    # Fill remaining places if there are not enough distinct sources.
+    # Second pass: fill remaining places.
     if len(selected) < MAX_ARTICLES_FOR_ANALYSIS:
         for article in candidates:
             if article["link"] in selected_links:
@@ -320,7 +322,6 @@ def select_relevant_news(articles):
 # ============================================================
 
 def build_prompt(articles):
-    """Prepare the Persian gold-market analysis prompt."""
     article_blocks = []
 
     for index, article in enumerate(articles, start=1):
@@ -337,95 +338,56 @@ def build_prompt(articles):
     news_text = "\n".join(article_blocks)
 
     return f"""
-نقش تو: تحلیلگر حرفه‌ای بازار جهانی طلا برای رسانه مالی
-«فاندبورد | FundBoard».
-
 بر اساس خبرهای زیر، یک گزارش تحلیلی دقیق و روان به زبان فارسی
-برای انتشار در کانال تلگرام بنویس.
+برای انتشار در کانال تلگرام «فاندبورد | FundBoard» بنویس.
 
 خبرها:
 {news_text}
 
-قواعد مهم:
-- فقط از اطلاعات موجود در خبرها استفاده کن.
-- هیچ قیمت، درصد تغییر، پیش‌بینی عددی یا نقل‌قولی را جعل نکن.
-- اگر داده کافی وجود ندارد، صریحاً از قطعیت پرهیز کن.
+دستورالعمل:
+- فقط از اطلاعات ارائه‌شده استفاده کن.
+- قیمت، درصد، نقل‌قول یا آمار جدید جعل نکن.
 - بین واقعیت خبری و برداشت تحلیلی تفاوت بگذار.
 - تأثیر احتمالی دلار آمریکا، نرخ بهره فدرال رزرو،
   بازده اوراق خزانه‌داری، تورم و ریسک‌های ژئوپلیتیکی را
   فقط در صورت ارتباط با خبرها توضیح بده.
-- اخبار متناقض را پنهان نکن.
+- خبرهای متناقض را پنهان نکن.
 - از توصیه قطعی خرید یا فروش خودداری کن.
-- متن را خلاصه، حرفه‌ای، مستقل و مناسب تلگرام بنویس.
-- تیتر جذاب و تحلیلی داشته باش.
-- از مقدمه‌های کلیشه‌ای و تکرار یک مطلب پرهیز کن.
-- در انتها یک جمع‌بندی کوتاه با عنوان «جمع‌بندی فاندبورد» بیاور.
-- فهرست منابع و لینک‌ها را تولید نکن؛ برنامه انتشار آن‌ها را
-  جداگانه اضافه می‌کند.
-- خروجی را فقط به زبان فارسی و بدون توضیح درباره فرایند تولید
-  متن ارائه بده.
+- متن را حرفه‌ای، خلاصه و مناسب تلگرام بنویس.
+- یک تیتر جذاب و تحلیلی انتخاب کن.
+- از تکرار و مقدمه‌های کلیشه‌ای پرهیز کن.
+- در انتها بخشی با عنوان «جمع‌بندی فاندبورد» بیاور.
+- منابع و لینک‌ها را در متن تولید نکن؛ برنامه انتشار جداگانه
+  لینک منابع را اضافه می‌کند.
+- هیچ توضیحی درباره مراحل استدلال یا نحوه تولید متن ننویس.
+- فقط متن نهایی قابل انتشار را برگردان.
 """
 
 
 # ============================================================
-# Cloudflare AI response handling
+# Response parsing
 # ============================================================
 
 def extract_analysis(data):
-    """Extract generated text from common Cloudflare response shapes."""
     if not isinstance(data, dict):
         return ""
 
-    result = data.get("result")
+    result = data.get("result", data)
 
     if isinstance(result, str):
         return result.strip()
 
-    if isinstance(result, dict):
-        # Common Workers AI text-generation response.
-        response = result.get("response")
+    if not isinstance(result, dict):
+        return ""
 
-        if isinstance(response, str) and response.strip():
-            return response.strip()
-
-        # Alternative text fields.
-        for key in ("output_text", "generated_text", "text"):
-            value = result.get(key)
-
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-        # Chat-completion style response.
-        choices = result.get("choices")
-
-        if isinstance(choices, list) and choices:
-            first = choices[0]
-
-            if isinstance(first, dict):
-                message = first.get("message", {})
-
-                if isinstance(message, dict):
-                    content = message.get("content")
-
-                    if isinstance(content, str) and content.strip():
-                        return content.strip()
-
-                text_value = first.get("text")
-
-                if (
-                    isinstance(text_value, str)
-                    and text_value.strip()
-                ):
-                    return text_value.strip()
-
-    # Some responses may expose choices at the top level.
-    choices = data.get("choices")
+    choices = result.get("choices", [])
 
     if isinstance(choices, list) and choices:
-        first = choices[0]
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
 
-        if isinstance(first, dict):
-            message = first.get("message", {})
+            message = choice.get("message", {})
 
             if isinstance(message, dict):
                 content = message.get("content")
@@ -433,11 +395,43 @@ def extract_analysis(data):
                 if isinstance(content, str) and content.strip():
                     return content.strip()
 
+                # Some APIs return content as text blocks.
+                if isinstance(content, list):
+                    text_parts = []
+
+                    for part in content:
+                        if (
+                            isinstance(part, dict)
+                            and isinstance(part.get("text"), str)
+                        ):
+                            text_parts.append(part["text"])
+
+                    combined = "\n".join(text_parts).strip()
+
+                    if combined:
+                        return combined
+
+            text_value = choice.get("text")
+
+            if isinstance(text_value, str) and text_value.strip():
+                return text_value.strip()
+
+    # Handle other common response formats.
+    for key in ("response", "output_text", "generated_text", "text"):
+        value = result.get(key)
+
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    # Intentionally do not use the "reasoning" field as published text.
     return ""
 
 
+# ============================================================
+# Cloudflare AI
+# ============================================================
+
 def analyze_news(articles):
-    """Generate the analysis with retries for temporary failures."""
     account_id = os.environ.get(
         "CLOUDFLARE_ACCOUNT_ID", ""
     ).strip()
@@ -464,9 +458,11 @@ def analyze_news(articles):
             {
                 "role": "system",
                 "content": (
-                    "تو تحلیلگر بازار جهانی طلا هستی. "
-                    "فقط به فارسی و بر اساس داده‌های ارائه‌شده "
-                    "پاسخ بده و اطلاعات جعل نکن."
+                    "تو تحلیلگر حرفه‌ای بازار جهانی طلا هستی. "
+                    "یک گزارش نهایی فارسی تولید کن. "
+                    "پاسخ نهایی باید در فیلد محتوای پیام باشد؛ "
+                    "نه صرفاً در بخش استدلال داخلی. "
+                    "از جعل اطلاعات خودداری کن."
                 ),
             },
             {
@@ -474,7 +470,8 @@ def analyze_news(articles):
                 "content": prompt,
             },
         ],
-        "max_tokens": 1600,
+        "max_completion_tokens": 3000,
+        "reasoning_effort": "low",
         "temperature": 0.3,
     }
 
@@ -501,7 +498,7 @@ def analyze_news(articles):
             print(
                 f"Calling Cloudflare AI "
                 f"(attempt {attempt}/{MAX_ATTEMPTS}, "
-                f"timeout={REQUEST_TIMEOUT}s)..."
+                f"reasoning_effort=low)..."
             )
 
             with urllib.request.urlopen(
@@ -517,22 +514,20 @@ def analyze_news(articles):
                 data = json.loads(response_body)
             except json.JSONDecodeError as exc:
                 raise RuntimeError(
-                    "Cloudflare returned invalid JSON. "
-                    f"Response preview: {response_body[:1200]}"
+                    "Cloudflare returned invalid JSON: "
+                    + response_body[:1200]
                 ) from exc
 
             if not isinstance(data, dict):
                 raise RuntimeError(
-                    "Cloudflare returned an unexpected response "
-                    f"type: {type(data).__name__}"
+                    "Unexpected Cloudflare response type."
                 )
 
             if data.get("success") is False:
-                errors = data.get("errors", [])
                 raise RuntimeError(
-                    "Cloudflare API reported failure: "
+                    "Cloudflare API failure: "
                     + json.dumps(
-                        errors,
+                        data.get("errors", []),
                         ensure_ascii=False,
                     )[:1500]
                 )
@@ -541,43 +536,46 @@ def analyze_news(articles):
 
             if analysis:
                 print(
-                    f"Analysis generated successfully "
-                    f"({len(analysis)} characters)."
+                    "Analysis generated successfully: "
+                    f"{len(analysis)} characters."
                 )
+
                 return analysis
 
-            raise RuntimeError(
-                "Cloudflare AI returned an empty or "
-                "unrecognized response. Response preview: "
+            last_error = RuntimeError(
+                "Cloudflare returned no final text. "
+                "Response preview: "
                 + json.dumps(
                     data,
                     ensure_ascii=False,
-                )[:1500]
+                )[:2000]
             )
 
-        except urllib.error.HTTPError as exc:
-            error_body = ""
+            print(
+                f"Empty response on attempt "
+                f"{attempt}/{MAX_ATTEMPTS}."
+            )
+            print(str(last_error))
 
+        except urllib.error.HTTPError as exc:
             try:
                 error_body = exc.read().decode(
                     "utf-8",
                     errors="replace",
                 )
             except Exception:
-                pass
+                error_body = ""
 
             last_error = RuntimeError(
                 f"Cloudflare HTTP {exc.code}: "
                 f"{error_body[:1500]}"
             )
 
-            print(
-                f"Cloudflare HTTP error on attempt "
-                f"{attempt}/{MAX_ATTEMPTS}: {last_error}"
-            )
+            print(str(last_error))
 
-            # Retry only errors that may be temporary.
-            if exc.code not in (408, 425, 429, 500, 502, 503, 504):
+            if exc.code not in (
+                408, 425, 429, 500, 502, 503, 504
+            ):
                 raise last_error from exc
 
         except (
@@ -588,35 +586,27 @@ def analyze_news(articles):
             last_error = exc
 
             print(
-                f"Cloudflare network/timeout error on attempt "
+                f"Network/timeout error on attempt "
                 f"{attempt}/{MAX_ATTEMPTS}: {exc}"
             )
 
         except RuntimeError as exc:
             last_error = exc
-
-            print(
-                f"Cloudflare response error on attempt "
-                f"{attempt}/{MAX_ATTEMPTS}: {exc}"
-            )
-
-            # Response parsing/API errors usually will not improve
-            # with a retry, so stop here.
-            raise
+            print(str(exc))
 
         if attempt < MAX_ATTEMPTS:
-            delay = 10 * attempt
+            delay = 5 * attempt
             print(f"Retrying in {delay} seconds...")
             time.sleep(delay)
 
     raise RuntimeError(
-        f"Cloudflare AI request failed after "
-        f"{MAX_ATTEMPTS} attempts. Last error: {last_error}"
+        f"Cloudflare AI failed after {MAX_ATTEMPTS} attempts. "
+        f"Last error: {last_error}"
     )
 
 
 # ============================================================
-# Local preview
+# Standalone preview
 # ============================================================
 
 def main():
@@ -632,6 +622,7 @@ def main():
         )
 
     print("Generating Persian analysis...")
+
     analysis = analyze_news(selected_articles)
 
     print("\n" + "=" * 60)
