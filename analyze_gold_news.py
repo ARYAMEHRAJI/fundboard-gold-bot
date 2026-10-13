@@ -169,7 +169,7 @@ def analyze_news(articles):
                 ),
             },
         ],
-        "max_tokens": 1200,
+        "max_tokens": 3000,
         "temperature": 0.2,
     }
 
@@ -193,15 +193,37 @@ def analyze_news(articles):
             "Cloudflare returned an unsuccessful response."
         )
 
-    choices = result.get("result", {}).get("choices", [])
-    if not choices:
-        raise RuntimeError("No analysis was returned by the model.")
+    
+choices = result.get("result", {}).get("choices", [])
 
-    content = choices[0].get("message", {}).get("content", "")
-    if not content.strip():
-        raise RuntimeError("The model returned an empty analysis.")
+if not choices:
+    raise RuntimeError(
+        "No analysis was returned. Response: "
+        + json.dumps(result.get("result", {}), ensure_ascii=False)[:2000]
+    )
 
-    return content.strip()
+choice = choices[0]
+message = choice.get("message") or {}
+content = message.get("content")
+
+if not isinstance(content, str) or not content.strip():
+    print("Model finish reason:", choice.get("finish_reason"))
+    print("Model stop reason:", choice.get("stop_reason"))
+    print("Returned fields:", list(message.keys()))
+    print(
+        "Model response details:",
+        json.dumps(
+            result.get("result", {}),
+            ensure_ascii=False
+        )[:3000]
+    )
+    raise RuntimeError(
+        "The model returned no publishable text. "
+        "See response details above."
+    )
+
+return content.strip()
+
 
 
 def main():
