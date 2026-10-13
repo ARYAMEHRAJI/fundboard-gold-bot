@@ -1,51 +1,47 @@
 
-import json
-import time
-import urllib.error
-import urllib.parse
 import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
 
-API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
+query = '"gold price" OR "spot gold" OR "gold bullion" when:1d'
 
 params = {
-    "query": '"gold price" OR "spot gold" OR "gold bullion"',
-    "mode": "ArtList",
-    "format": "json",
-    "maxrecords": "5",
-    "sort": "DateDesc",
-    "timespan": "24h",
-    "sourcelang": "English",
+    "q": query,
+    "hl": "en-US",
+    "gl": "US",
+    "ceid": "US:en",
 }
 
-url = API_URL + "?" + urllib.parse.urlencode(params)
-request = urllib.request.Request(
-    url,
-    headers={"User-Agent": "FundBoardGoldBot/1.0"}
+url = (
+    "https://news.google.com/rss/search?"
+    + urllib.parse.urlencode(params)
 )
 
-for attempt in range(2):
-    try:
-        with urllib.request.urlopen(
-            request, timeout=30
-        ) as response:
-            data = json.loads(response.read().decode("utf-8"))
+request = urllib.request.Request(
+    url,
+    headers={"User-Agent": "Mozilla/5.0 FundBoardGoldBot/1.0"}
+)
 
-        articles = data.get("articles", [])
-        print("=== FUND BOARD GOLD NEWS TEST ===")
-        print("Articles found:", len(articles))
+with urllib.request.urlopen(request, timeout=30) as response:
+    xml_data = response.read()
 
-        for i, article in enumerate(articles, start=1):
-            print(f"\n[{i}] {article.get('title', 'No title')}")
-            print("Source:", article.get("domain", "Unknown"))
-            print("Date:", article.get("seendate", "Unknown"))
-            print("URL:", article.get("url", ""))
+root = ET.fromstring(xml_data)
+items = root.findall("./channel/item")
 
-        break
+print("=== FUND BOARD GOLD NEWS TEST ===")
+print("Articles found:", len(items))
 
-    except urllib.error.HTTPError as exc:
-        if exc.code == 429:
-            print("GDELT rate limit reached (HTTP 429).")
-            print("Wait before trying again; no repeated requests.")
-            break
-        raise
-        
+for i, item in enumerate(items[:10], start=1):
+    title = item.findtext("title", default="No title")
+    link = item.findtext("link", default="")
+    pub_date = item.findtext("pubDate", default="Unknown")
+    source = item.findtext("source", default="Unknown")
+
+    print(f"\n[{i}] {title}")
+    print("Source:", source)
+    print("Date:", pub_date)
+    print("URL:", link)
+
+if not items:
+    print("No matching news found.")
+    
