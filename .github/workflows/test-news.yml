@@ -1,0 +1,20 @@
+
+name: Test Gold News Source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch recent gold news
+        run: python test_news.py
+        
