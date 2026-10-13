@@ -1,6 +1,9 @@
+
 import os
-import json
 import re
+import json
+import html
+import urllib.parse
 import urllib.request
 import urllib.error
 
@@ -11,268 +14,198 @@ from analyze_gold_news import (
 )
 
 
-# ==========================================
-# Configuration
-# ==========================================
-
 TELEGRAM_API = "https://api.telegram.org/bot{}/sendMessage"
 
 MAX_TELEGRAM_LENGTH = 3800
 MIN_ARTICLES = 2
 MIN_DISTINCT_SOURCES = 2
-MAX_ARTICLES_FOR_ANALYSIS = 8
+
+# این دو خط در انتهای تمام پست‌ها ثابت هستند.
+FOOTER = (
+    "<b>@FundBoard_Gold | فاندبورد طلا</b>\n\n"
+    "<b>\u200eداشبورد سرمایه‌گذاری شما</b>"
+)
 
 
-# ==========================================
-# Prepare Telegram message
-# ==========================================
+def remove_markdown(text):
+    """Remove common Markdown markers so they do not appear in Telegram."""
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    text = re.sub(r"__(.*?)__", r"\1", text)
+    text = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    return text.strip()
 
-def prepare_message(analysis, articles):
-    message = analysis.strip()
 
-    # Remove any AI-generated source list. Real RSS sources
-    # will be appended below by this program.
-    message = re.sub(
-        r"(?is)\n\s*(?:منابع|منابع خبری|منابع منتخب)\s*:\s*.*$",
-        "",
-        message,
+def remove_sources_section(text):
+    """
+    Remove a trailing sources section if the model happens to generate one.
+    The publisher does not add any source list.
+    """
+    lines = text.splitlines()
+    kept = []
+
+    source_heading = re.compile(
+        r"^\s*(?:#{1,6}\s*)?"
+        r"(?:منابع(?:\s+(?:خبر|منتخب|و\s‌?مراجع))?|"
+        r"sources|references)\s*:?\s*$",
+        flags=re.IGNORECASE,
     )
 
-    message = message.replace("**", "")
-    message = re.sub(
-        r"(?m)^\s*\*\s+",
-        "• ",
-        message,
-    )
-    message = re.sub(
-        r"\n{3,}",
-        "\n\n",
-        message,
-    ).strip()
-
-    # Use only actual source URLs returned by Google News RSS.
-    source_lines = []
-    seen_sources = set()
-
-    for article in articles:
-        source = (
-            article.get("source") or "منبع خبری"
-        ).strip()
-
-        title = (
-            article.get("title") or ""
-        ).strip()
-
-        link = (
-            article.get("link") or ""
-        ).strip()
-
-        source_key = source.casefold()
-
-        if not link or source_key in seen_sources:
-            continue
-
-        seen_sources.add(source_key)
-
-        source_lines.append(
-            f"• {source}: {title}\n{link}"
-        )
-
-        if len(source_lines) >= 2:
+    for line in lines:
+        if source_heading.match(line.strip()):
             break
+        kept.append(line)
 
-    source_section = ""
+    return "\n".join(kept).strip()
 
-    if source_lines:
-        source_section = (
-            "\n\nمنابع منتخب:\n"
-            + "\n\n".join(source_lines)
+
+def split_title_and_body(analysis):
+    text = remove_markdown(analysis)
+    text = remove_sources_section(text)
+
+    lines = text.splitlines()
+
+    while lines and not lines[0].strip():
+        lines.pop(0)
+
+    if not lines:
+        raise RuntimeError("The generated analysis is empty.")
+
+    title = lines[0].strip()
+    body = "\n".join(lines[1:]).strip()
+
+    # Make sure the headline starts with a relevant emoji.
+    emoji_pattern = re.compile(
+        r"[\U0001F300-\U0001FAFF\u2600-\u27BF]"
+    )
+    if not emoji_pattern.search(title):
+        title = "🟡 " + title
+
+    return title, body
+
+
+def prepare_message(analysis):
+    title, body = split_title_and_body(analysis)
+
+    # Keep the body within Telegram's message-size limit.
+    # Reserve space for the title, footer, HTML tags and spacing.
+    fixed_text = title + "\n\n" + FOOTER
+    max_body_chars = max(
+        300,
+        MAX_TELEGRAM_LENGTH - len(fixed_text) - 100
+    )
+
+    if len(body) > max_body_chars:
+        body = body[:max_body_chars].rsplit(" ", 1)[0].rstrip()
+        body += "…"
+
+    # Escape all generated text before adding our own HTML tags.
+    safe_title = html.escape(title, quote=False)
+    safe_body = html.escape(body, quote=False)
+
+    if safe_body:
+        message = (
+            f"<b>{safe_title}</b>\n\n"
+            f"{safe_body}\n\n"
+            f"{FOOTER}"
         )
+    else:
+        message = f"<b>{safe_title}</b>\n\n{FOOTER}"
 
-    available_length = (
-        MAX_TELEGRAM_LENGTH
-        - len(source_section)
-        - 2
-    )
-
-    if len(message) > available_length:
-        message = message[
-            :max(0, available_length - 35)
-        ].rsplit(" ", 1)[0]
-
-        message += (
-            "\n\n[متن به دلیل محدودیت طول کوتاه شد.]"
-        )
-
-    return message + source_section
-
-
-# ==========================================
-# Publish to Telegram
-# ==========================================
-
-def publish_to_telegram(message):
-    bot_token = os.environ.get(
-        "TELEGRAM_BOT_TOKEN"
-    )
-
-    channel_id = os.environ.get(
-        "TELEGRAM_CHANNEL_ID"
-    )
-
-    if not bot_token or not channel_id:
+    if len(message) > MAX_TELEGRAM_LENGTH:
         raise RuntimeError(
-            "TELEGRAM_BOT_TOKEN or "
-            "TELEGRAM_CHANNEL_ID is missing from GitHub Secrets."
+            f"Prepared Telegram message is too long: {len(message)} chars."
         )
 
-    endpoint = TELEGRAM_API.format(bot_token)
+    return message
+
+
+def send_telegram_message(message):
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    channel_id = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
+
+    if not token or not channel_id:
+        raise RuntimeError(
+            "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHANNEL_ID secret."
+        )
+
+    url = TELEGRAM_API.format(token)
 
     payload = {
         "chat_id": channel_id,
         "text": message,
+        "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
 
-    body = json.dumps(
-        payload,
-        ensure_ascii=False,
-    ).encode("utf-8")
-
     request = urllib.request.Request(
-        endpoint,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-        },
+        url,
+        data=urllib.parse.urlencode(payload).encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
 
     try:
-        with urllib.request.urlopen(
-            request,
-            timeout=30,
-        ) as response:
-            response_text = response.read().decode(
-                "utf-8"
-            )
-
-    except urllib.error.HTTPError as error:
-        error_body = error.read().decode(
-            "utf-8",
-            errors="replace",
-        )
-
+        with urllib.request.urlopen(request, timeout=30) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(
-            f"Telegram HTTP error {error.code}: "
-            f"{error_body[:1500]}"
-        ) from error
-
-    except urllib.error.URLError as error:
-        raise RuntimeError(
-            f"Telegram connection error: {error}"
-        ) from error
-
-    try:
-        result = json.loads(response_text)
-
-    except json.JSONDecodeError as error:
-        raise RuntimeError(
-            "Telegram returned invalid JSON."
-        ) from error
+            f"Telegram HTTP {exc.code}: {error_body[:1500]}"
+        ) from exc
 
     if not result.get("ok"):
         raise RuntimeError(
-            "Telegram could not publish the message: "
-            + json.dumps(
-                result,
-                ensure_ascii=False,
-            )[:1500]
+            "Telegram rejected the message: "
+            + json.dumps(result, ensure_ascii=False)
         )
 
     message_id = (
-        result.get("result", {}).get("message_id")
+        result.get("result", {}).get("message_id", "unknown")
     )
+    print(f"Message published successfully. Message ID: {message_id}")
 
-    print("Telegram publication successful.")
-    print("Published message ID:", message_id)
-
-
-# ==========================================
-# Main
-# ==========================================
 
 def main():
     print("FundBoard Gold News Publisher")
-    print("=" * 50)
 
-    print("Fetching recent news...")
-
-    articles = fetch_news()
-    relevant_articles = select_relevant_news(articles)
-
-    print("Relevant articles:", len(relevant_articles))
+    articles = select_relevant_news(fetch_news())
 
     distinct_sources = {
-        (
-            article.get("source") or "Unknown"
-        ).strip().casefold()
-        for article in relevant_articles
+        article.get("source", "").strip().lower()
+        for article in articles
+        if article.get("source", "").strip()
     }
 
-    print("Distinct sources:", len(distinct_sources))
+    print(f"Relevant articles selected: {len(articles)}")
+    print(f"Distinct sources: {len(distinct_sources)}")
 
-    # Do not publish a weak analysis when the feed is sparse.
-    if len(relevant_articles) < MIN_ARTICLES:
-        print(
-            "SKIP: Not enough relevant articles. "
-            "Nothing was published."
-        )
+    if len(articles) < MIN_ARTICLES:
+        print("SKIP: Not enough relevant articles.")
         return
 
     if len(distinct_sources) < MIN_DISTINCT_SOURCES:
-        print(
-            "SKIP: Too few distinct sources. "
-            "Nothing was published."
-        )
+        print("SKIP: Not enough distinct news sources.")
         return
-
-    selected_articles = relevant_articles[
-        :MAX_ARTICLES_FOR_ANALYSIS
-    ]
 
     print("Generating Persian analysis...")
+    analysis = analyze_news(articles)
+    message = prepare_message(analysis)
 
-    analysis = analyze_news(selected_articles)
-
-    if not analysis or not analysis.strip():
-        raise RuntimeError(
-            "The AI returned an empty analysis. "
-            "Nothing was published."
-        )
-
-    message = prepare_message(
-        analysis,
-        selected_articles,
-    )
-
-    print("\nGenerated message preview:\n")
+    print("\nPrepared Telegram message preview:\n")
     print(message)
+    print("\nPreview complete.")
 
-    publish_flag = os.environ.get(
-        "PUBLISH_TO_TELEGRAM",
-        "false",
-    ).strip().lower()
+    publish = os.environ.get(
+        "PUBLISH_TO_TELEGRAM", "false"
+    ).strip().lower() == "true"
 
-    if publish_flag != "true":
-        print(
-            "\nTest mode: message was NOT sent to Telegram."
-        )
+    if not publish:
+        print("Test mode: message was NOT sent to Telegram.")
         return
 
-    print("\nPublishing to the configured Telegram channel...")
-
-    publish_to_telegram(message)
+    send_telegram_message(message)
 
 
 if __name__ == "__main__":
