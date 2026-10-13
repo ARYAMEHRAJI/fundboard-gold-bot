@@ -28,7 +28,7 @@ CLOUDFLARE_URL = (
     "{account_id}/ai/run/{model}"
 )
 
-MAX_ARTICLES = 5
+MAX_ARTICLES = 15
 MAX_AGE_HOURS = 18
 MAX_TOKENS = 1800
 
