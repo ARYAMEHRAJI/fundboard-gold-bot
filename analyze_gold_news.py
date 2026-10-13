@@ -3,6 +3,7 @@ import os
 import re
 import html
 import json
+import time
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -13,11 +14,9 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
 
-# =========================================================
+# ============================================================
 # Configuration
-# =========================================================
-
-NEWS_URL = "https://news.google.com/rss/search?"
+# ============================================================
 
 NEWS_QUERY = (
     '"spot gold" OR "gold futures" OR "gold bullion" OR '
@@ -28,15 +27,16 @@ NEWS_QUERY = (
 
 MODEL = "@cf/qwen/qwen3.8-27b"
 
-MAX_ARTICLES = 20
-MAX_AGE_HOURS = 18
+REQUEST_TIMEOUT = 180
+MAX_ATTEMPTS = 3
 MAX_ARTICLES_FOR_ANALYSIS = 8
-MAX_TOKENS = 1600
+
+GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 
 
-# =========================================================
+# ============================================================
 # Text utilities
-# =========================================================
+# ============================================================
 
 def clean_text(value):
     """Remove HTML tags and normalize whitespace."""
@@ -50,303 +50,382 @@ def clean_text(value):
     return value.strip()
 
 
+def get_source_name(article):
+    """Return a readable publisher name."""
+    source = article.get("source", "")
+
+    if isinstance(source, dict):
+        source = source.get("title", "")
+
+    if source:
+        return clean_text(source)
+
+    link = article.get("link", "")
+
+    try:
+        return urlparse(link).netloc.replace("www.", "")
+    except Exception:
+        return "Unknown"
+
+
+def parse_date(value):
+    """Parse an RSS publication date into a timezone-aware datetime."""
+    if not value:
+        return None
+
+    try:
+        result = parsedate_to_datetime(value)
+
+        if result.tzinfo is None:
+            result = result.replace(tzinfo=timezone.utc)
+
+        return result.astimezone(timezone.utc)
+
+    except Exception:
+        return None
+
+
+# ============================================================
+# News retrieval
+# ============================================================
+
 def is_relevant_article(article):
-    """Identify news relevant to gold and its market drivers."""
+    """Filter out articles that are not meaningfully about gold."""
     title = clean_text(article.get("title", "")).lower()
-    description = clean_text(
-        article.get("description", "")
-    ).lower()
+    summary = clean_text(article.get("summary", "")).lower()
+    text = f"{title} {summary}"
 
     gold_terms = (
         "gold",
         "bullion",
         "xau",
         "precious metal",
+        "precious metals",
     )
 
-    macro_terms = (
-        "federal reserve",
-        "fed ",
-        "interest rate",
-        "inflation",
-        "us dollar",
-        "dollar",
-        "treasury yield",
-        "bond yield",
-        "central bank",
-        "geopolitical",
-        "geopolitics",
-        "safe haven",
+    if not any(term in text for term in gold_terms):
+        return False
+
+    irrelevant_terms = (
+        "golden state warriors",
+        "golden globes",
+        "gold medal",
+        "gold award",
+        "gold jewelry",
+        "gold jewellery",
+        "golden retriever",
     )
 
-    # Gold-specific headlines are preferred.
-    if any(term in title for term in gold_terms):
-        return True
+    if any(term in text for term in irrelevant_terms):
+        return False
 
-    has_macro = any(
-        term in title or term in description
-        for term in macro_terms
-    )
+    return True
 
-    has_gold_context = any(
-        term in title or term in description
-        for term in gold_terms
-    )
-
-    return has_macro and has_gold_context
-
-
-# =========================================================
-# Google News RSS
-# =========================================================
 
 def fetch_news():
     """Fetch recent gold-market news from Google News RSS."""
-    params = urllib.parse.urlencode({
+    params = {
         "q": NEWS_QUERY,
         "hl": "en-US",
         "gl": "US",
         "ceid": "US:en",
-    })
+    }
 
-    url = NEWS_URL + params
+    url = (
+        GOOGLE_NEWS_RSS
+        + "?"
+        + urllib.parse.urlencode(params)
+    )
 
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "Mozilla/5.0 FundBoardGoldBot/1.0"
+            "User-Agent": (
+                "Mozilla/5.0 "
+                "(compatible; FundBoardGoldBot/1.0)"
+            )
         },
     )
 
-    try:
-        with urllib.request.urlopen(
-            request,
-            timeout=25,
-        ) as response:
-            xml_data = response.read()
+    last_error = None
 
-        root = ET.fromstring(xml_data)
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=45,
+            ) as response:
+                xml_data = response.read()
 
-    except Exception as exc:
-        raise RuntimeError(
-            f"Could not fetch Google News RSS: {exc}"
-        ) from exc
+            root = ET.fromstring(xml_data)
+            articles = []
 
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=MAX_AGE_HOURS)
+            for item in root.findall(".//item"):
+                title = clean_text(
+                    item.findtext("title", "")
+                )
 
-    articles = []
-    seen_links = set()
+                link = clean_text(
+                    item.findtext("link", "")
+                )
 
-    for item in root.findall(".//item"):
-        title = clean_text(
-            item.findtext("title", default="")
-        )
-        link = clean_text(
-            item.findtext("link", default="")
-        )
-        description = clean_text(
-            item.findtext("description", default="")
-        )
-        pub_date = clean_text(
-            item.findtext("pubDate", default="")
-        )
+                summary = clean_text(
+                    item.findtext("description", "")
+                )
 
-        source_element = item.find("source")
+                published = clean_text(
+                    item.findtext("pubDate", "")
+                )
 
-        source = ""
-        if source_element is not None:
-            source = clean_text(source_element.text or "")
+                source_element = item.find("source")
+                source = (
+                    clean_text(source_element.text)
+                    if source_element is not None
+                    else ""
+                )
 
-        if not title or not link:
-            continue
+                if not title or not link:
+                    continue
 
-        if link in seen_links:
-            continue
+                article = {
+                    "title": title,
+                    "link": link,
+                    "summary": summary,
+                    "published": published,
+                    "source": source,
+                }
 
-        published_at = None
+                if is_relevant_article(article):
+                    articles.append(article)
 
-        if pub_date:
-            try:
-                published_at = parsedate_to_datetime(pub_date)
+            print(f"Relevant articles fetched: {len(articles)}")
+            return articles
 
-                if published_at.tzinfo is None:
-                    published_at = published_at.replace(
-                        tzinfo=timezone.utc
-                    )
-                else:
-                    published_at = published_at.astimezone(
-                        timezone.utc
-                    )
+        except Exception as exc:
+            last_error = exc
 
-            except (TypeError, ValueError, OverflowError):
-                published_at = None
+            print(
+                f"News RSS attempt {attempt}/"
+                f"{MAX_ATTEMPTS} failed: {exc}"
+            )
 
-        if published_at and published_at < cutoff:
-            continue
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(3 * attempt)
 
-        article = {
-            "title": title,
-            "link": link,
-            "description": description,
-            "source": source or (
-                urlparse(link).hostname or "Unknown source"
-            ),
-            "published": (
-                published_at.isoformat()
-                if published_at
-                else pub_date
-            ),
-        }
-
-        if not is_relevant_article(article):
-            continue
-
-        articles.append(article)
-        seen_links.add(link)
-
-        if len(articles) >= MAX_ARTICLES:
-            break
-
-    return articles
+    raise RuntimeError(
+        f"Could not retrieve news RSS: {last_error}"
+    )
 
 
-# =========================================================
+# ============================================================
 # Article selection
-# =========================================================
+# ============================================================
 
-def select_relevant_news(
-    articles,
-    limit=MAX_ARTICLES_FOR_ANALYSIS,
-):
-    """Prioritize gold headlines and reduce duplicate titles."""
-    gold_terms = (
-        "gold",
-        "bullion",
-        "xau",
-        "precious metal",
-    )
+def select_relevant_news(articles):
+    """
+    Keep recent articles, prioritize distinct publishers,
+    and avoid duplicate links and headlines.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=36)
 
-    ranked = sorted(
-        articles,
-        key=lambda article: (
-            not any(
-                term in article.get("title", "").lower()
-                for term in gold_terms
-            ),
-            article.get("published", ""),
-        ),
-    )
-
-    selected = []
+    candidates = []
+    seen_links = set()
     seen_titles = set()
 
-    for article in ranked:
-        normalized_title = re.sub(
-            r"\W+",
-            " ",
-            article.get("title", "").lower(),
-        ).strip()
+    for article in articles:
+        link = article.get("link", "").strip()
+        title = clean_text(article.get("title", ""))
 
-        if not normalized_title:
+        if not link or not title:
+            continue
+
+        normalized_link = link.rstrip("/").lower()
+        normalized_title = re.sub(
+            r"[^a-z0-9]+",
+            "",
+            title.lower(),
+        )
+
+        if normalized_link in seen_links:
             continue
 
         if normalized_title in seen_titles:
             continue
 
-        selected.append(article)
+        seen_links.add(normalized_link)
         seen_titles.add(normalized_title)
 
-        if len(selected) >= limit:
+        published_date = parse_date(
+            article.get("published", "")
+        )
+
+        if published_date and published_date < cutoff:
+            continue
+
+        article["source"] = get_source_name(article)
+        candidates.append(article)
+
+    # Prefer the newest articles when publication dates are available.
+    candidates.sort(
+        key=lambda item: (
+            parse_date(item.get("published", "")) is not None,
+            parse_date(item.get("published", ""))
+            or datetime.min.replace(tzinfo=timezone.utc),
+        ),
+        reverse=True,
+    )
+
+    # First select one article per source.
+    selected = []
+    selected_links = set()
+    selected_sources = set()
+
+    for article in candidates:
+        source = article.get("source", "Unknown").lower()
+
+        if source not in selected_sources:
+            selected.append(article)
+            selected_sources.add(source)
+            selected_links.add(article["link"])
+
+        if len(selected) >= MAX_ARTICLES_FOR_ANALYSIS:
             break
+
+    # Fill remaining places if there are not enough distinct sources.
+    if len(selected) < MAX_ARTICLES_FOR_ANALYSIS:
+        for article in candidates:
+            if article["link"] in selected_links:
+                continue
+
+            selected.append(article)
+            selected_links.add(article["link"])
+
+            if len(selected) >= MAX_ARTICLES_FOR_ANALYSIS:
+                break
+
+    sources = {
+        article.get("source", "Unknown")
+        for article in selected
+    }
+
+    print(f"Selected articles: {len(selected)}")
+    print(f"Distinct sources: {len(sources)}")
 
     return selected
 
 
-# =========================================================
+# ============================================================
 # Prompt construction
-# =========================================================
+# ============================================================
 
 def build_prompt(articles):
-    """Build a Persian financial analysis prompt from RSS news."""
-    news_items = []
+    """Prepare the Persian gold-market analysis prompt."""
+    article_blocks = []
 
     for index, article in enumerate(articles, start=1):
-        news_items.append(
-            f"{index}. عنوان: {article.get('title', '')}\n"
-            f"منبع: {article.get('source', '')}\n"
-            f"زمان انتشار: "
-            f"{article.get('published', 'نامشخص')}\n"
-            f"خلاصه خبر: "
-            f"{article.get('description', '')[:900]}"
+        article_blocks.append(
+            f"""
+خبر {index}
+عنوان: {article.get("title", "")}
+منبع: {article.get("source", "")}
+زمان انتشار: {article.get("published", "")}
+خلاصه: {article.get("summary", "")}
+"""
         )
 
-    news_text = "\n\n".join(news_items)
+    news_text = "\n".join(article_blocks)
 
     return f"""
-تو تحلیلگر بازار جهانی طلا برای رسانه فاندبورد هستی.
+نقش تو: تحلیلگر حرفه‌ای بازار جهانی طلا برای رسانه مالی
+«فاندبورد | FundBoard».
 
-بر اساس خبرهای زیر، یک تحلیل فارسی دقیق، روان و مستقل
-برای انتشار در کانال تلگرامی تهیه کن.
+بر اساس خبرهای زیر، یک گزارش تحلیلی دقیق و روان به زبان فارسی
+برای انتشار در کانال تلگرام بنویس.
 
-قواعد:
-- فقط بر اساس اطلاعات موجود در خبرها تحلیل کن.
-- قیمت لحظه‌ای، درصد تغییر، آمار یا نقل‌قولی را که در
-  داده‌ها وجود ندارد، اختراع نکن.
-- میان واقعیت خبری، برداشت تحلیلی و سناریوی احتمالی تفاوت بگذار.
-- اثر نرخ بهره آمریکا، دلار، بازده اوراق خزانه، تورم و
-  ریسک‌های ژئوپلیتیک را در صورت ارتباط توضیح بده.
-- در نبود شواهد کافی، عدم قطعیت را صریح بیان کن.
-- پیش‌بینی قطعی قیمت و توصیه مستقیم خرید یا فروش نده.
-- خبرهای تکراری را ادغام کن.
-- تیتر جذاب اما غیراغراق‌آمیز انتخاب کن.
-- متن کاربردی، مختصر و مناسب تلگرام باشد.
-- در پایان، جمع‌بندی و سناریوهای پیش رو را بنویس.
-- منبع یا لینک ساختگی نساز؛ برنامه منابع واقعی را جداگانه اضافه می‌کند.
-
-ساختار:
-۱. تیتر
-۲. مهم‌ترین تحولات خبری
-۳. تحلیل اثر عوامل بر بازار طلا
-۴. جمع‌بندی و سناریوهای پیش رو
-
-خبرهای ورودی:
-
+خبرها:
 {news_text}
-""".strip()
+
+قواعد مهم:
+- فقط از اطلاعات موجود در خبرها استفاده کن.
+- هیچ قیمت، درصد تغییر، پیش‌بینی عددی یا نقل‌قولی را جعل نکن.
+- اگر داده کافی وجود ندارد، صریحاً از قطعیت پرهیز کن.
+- بین واقعیت خبری و برداشت تحلیلی تفاوت بگذار.
+- تأثیر احتمالی دلار آمریکا، نرخ بهره فدرال رزرو،
+  بازده اوراق خزانه‌داری، تورم و ریسک‌های ژئوپلیتیکی را
+  فقط در صورت ارتباط با خبرها توضیح بده.
+- اخبار متناقض را پنهان نکن.
+- از توصیه قطعی خرید یا فروش خودداری کن.
+- متن را خلاصه، حرفه‌ای، مستقل و مناسب تلگرام بنویس.
+- تیتر جذاب و تحلیلی داشته باش.
+- از مقدمه‌های کلیشه‌ای و تکرار یک مطلب پرهیز کن.
+- در انتها یک جمع‌بندی کوتاه با عنوان «جمع‌بندی فاندبورد» بیاور.
+- فهرست منابع و لینک‌ها را تولید نکن؛ برنامه انتشار آن‌ها را
+  جداگانه اضافه می‌کند.
+- خروجی را فقط به زبان فارسی و بدون توضیح درباره فرایند تولید
+  متن ارائه بده.
+"""
 
 
-# =========================================================
-# Cloudflare Workers AI
-# =========================================================
+# ============================================================
+# Cloudflare AI response handling
+# ============================================================
 
-def extract_analysis(result):
-    """Extract text from common Cloudflare AI response formats."""
-    if not isinstance(result, dict):
+def extract_analysis(data):
+    """Extract generated text from common Cloudflare response shapes."""
+    if not isinstance(data, dict):
         return ""
 
-    response_data = result.get("result", {})
+    result = data.get("result")
 
-    if isinstance(response_data, str):
-        return response_data.strip()
+    if isinstance(result, str):
+        return result.strip()
 
-    if not isinstance(response_data, dict):
-        return ""
+    if isinstance(result, dict):
+        # Common Workers AI text-generation response.
+        response = result.get("response")
 
-    # Standard Workers AI response
-    analysis = response_data.get("response")
+        if isinstance(response, str) and response.strip():
+            return response.strip()
 
-    if isinstance(analysis, str) and analysis.strip():
-        return analysis.strip()
+        # Alternative text fields.
+        for key in ("output_text", "generated_text", "text"):
+            value = result.get(key)
 
-    # OpenAI-compatible response
-    choices = response_data.get("choices", [])
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        # Chat-completion style response.
+        choices = result.get("choices")
+
+        if isinstance(choices, list) and choices:
+            first = choices[0]
+
+            if isinstance(first, dict):
+                message = first.get("message", {})
+
+                if isinstance(message, dict):
+                    content = message.get("content")
+
+                    if isinstance(content, str) and content.strip():
+                        return content.strip()
+
+                text_value = first.get("text")
+
+                if (
+                    isinstance(text_value, str)
+                    and text_value.strip()
+                ):
+                    return text_value.strip()
+
+    # Some responses may expose choices at the top level.
+    choices = data.get("choices")
 
     if isinstance(choices, list) and choices:
-        first_choice = choices[0]
+        first = choices[0]
 
-        if isinstance(first_choice, dict):
-            message = first_choice.get("message", {})
+        if isinstance(first, dict):
+            message = first.get("message", {})
 
             if isinstance(message, dict):
                 content = message.get("content")
@@ -354,66 +433,23 @@ def extract_analysis(result):
                 if isinstance(content, str) and content.strip():
                     return content.strip()
 
-                if isinstance(content, list):
-                    parts = []
-
-                    for item in content:
-                        if isinstance(item, dict):
-                            text_part = item.get("text")
-                            if text_part:
-                                parts.append(str(text_part))
-                        elif isinstance(item, str):
-                            parts.append(item)
-
-                    if parts:
-                        return "\n".join(parts).strip()
-
-            # Some responses put generated text here.
-            text_value = first_choice.get("text")
-
-            if isinstance(text_value, str) and text_value.strip():
-                return text_value.strip()
-
-    # Other possible response fields
-    for key in ("generated_text", "output_text", "text"):
-        value = response_data.get(key)
-
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-
-    output = response_data.get("output")
-
-    if isinstance(output, str) and output.strip():
-        return output.strip()
-
-    if isinstance(output, dict):
-        for key in ("text", "response", "content"):
-            value = output.get(key)
-
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
     return ""
 
 
 def analyze_news(articles):
-    """Generate Persian analysis using Cloudflare Workers AI."""
-    if not articles:
-        raise ValueError(
-            "No relevant news articles were provided."
-        )
-
-    account_id = os.getenv(
+    """Generate the analysis with retries for temporary failures."""
+    account_id = os.environ.get(
         "CLOUDFLARE_ACCOUNT_ID", ""
     ).strip()
 
-    api_token = os.getenv(
+    api_token = os.environ.get(
         "CLOUDFLARE_API_TOKEN", ""
     ).strip()
 
     if not account_id or not api_token:
         raise RuntimeError(
-            "Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN."
+            "Missing CLOUDFLARE_ACCOUNT_ID or "
+            "CLOUDFLARE_API_TOKEN environment variable."
         )
 
     endpoint = (
@@ -421,147 +457,186 @@ def analyze_news(articles):
         f"{account_id}/ai/run/{MODEL}"
     )
 
+    prompt = build_prompt(articles)
+
     payload = {
         "messages": [
             {
                 "role": "system",
                 "content": (
-                    "You are a careful financial news analyst. "
-                    "Never invent facts, prices, or market data. "
-                    "Write the final answer in Persian."
+                    "تو تحلیلگر بازار جهانی طلا هستی. "
+                    "فقط به فارسی و بر اساس داده‌های ارائه‌شده "
+                    "پاسخ بده و اطلاعات جعل نکن."
                 ),
             },
             {
                 "role": "user",
-                "content": build_prompt(articles),
+                "content": prompt,
             },
         ],
-        "max_tokens": MAX_TOKENS,
+        "max_tokens": 1600,
         "temperature": 0.3,
     }
 
-    request = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_token}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    body = json.dumps(
+        payload,
+        ensure_ascii=False,
+    ).encode("utf-8")
 
-    try:
-        with urllib.request.urlopen(
-            request,
-            timeout=90,
-        ) as response:
-            raw_response = response.read().decode(
-                "utf-8",
-                errors="replace",
+    last_error = None
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        request = urllib.request.Request(
+            endpoint,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {api_token}",
+                "Content-Type": "application/json",
+                "User-Agent": "FundBoardGoldBot/1.0",
+            },
+            method="POST",
+        )
+
+        try:
+            print(
+                f"Calling Cloudflare AI "
+                f"(attempt {attempt}/{MAX_ATTEMPTS}, "
+                f"timeout={REQUEST_TIMEOUT}s)..."
             )
 
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode(
-            "utf-8",
-            errors="replace",
-        )
+            with urllib.request.urlopen(
+                request,
+                timeout=REQUEST_TIMEOUT,
+            ) as response:
+                response_body = response.read().decode(
+                    "utf-8",
+                    errors="replace",
+                )
 
-        raise RuntimeError(
-            f"Cloudflare AI HTTP {exc.code}: "
-            f"{error_body[:2000]}"
-        ) from exc
+            try:
+                data = json.loads(response_body)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    "Cloudflare returned invalid JSON. "
+                    f"Response preview: {response_body[:1200]}"
+                ) from exc
 
-    except Exception as exc:
-        raise RuntimeError(
-            f"Cloudflare AI request failed: {exc}"
-        ) from exc
+            if not isinstance(data, dict):
+                raise RuntimeError(
+                    "Cloudflare returned an unexpected response "
+                    f"type: {type(data).__name__}"
+                )
 
-    try:
-        result = json.loads(raw_response)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            "Cloudflare returned invalid JSON: "
-            f"{raw_response[:2000]}"
-        ) from exc
+            if data.get("success") is False:
+                errors = data.get("errors", [])
+                raise RuntimeError(
+                    "Cloudflare API reported failure: "
+                    + json.dumps(
+                        errors,
+                        ensure_ascii=False,
+                    )[:1500]
+                )
 
-    if not isinstance(result, dict):
-        raise RuntimeError(
-            "Unexpected Cloudflare response type: "
-            f"{type(result).__name__}"
-        )
+            analysis = extract_analysis(data)
 
-    if not result.get("success", False):
-        raise RuntimeError(
-            "Cloudflare AI returned an API error: "
-            + json.dumps(
-                {
-                    "errors": result.get("errors", []),
-                    "messages": result.get("messages", []),
-                },
-                ensure_ascii=False,
-                default=str,
-            )[:3000]
-        )
+            if analysis:
+                print(
+                    f"Analysis generated successfully "
+                    f"({len(analysis)} characters)."
+                )
+                return analysis
 
-    analysis = extract_analysis(result)
+            raise RuntimeError(
+                "Cloudflare AI returned an empty or "
+                "unrecognized response. Response preview: "
+                + json.dumps(
+                    data,
+                    ensure_ascii=False,
+                )[:1500]
+            )
 
-    if not analysis:
-        # Print useful diagnostic details without exposing
-        # the API token or other secret values.
-        diagnostic = {
-            "result_keys": (
-                list(result.get("result", {}).keys())
-                if isinstance(result.get("result"), dict)
-                else str(type(result.get("result")).__name__)
-            ),
-            "result_preview": result.get("result"),
-            "messages": result.get("messages", []),
-            "errors": result.get("errors", []),
-        }
+        except urllib.error.HTTPError as exc:
+            error_body = ""
 
-        raise RuntimeError(
-            "Could not extract analysis from Cloudflare response. "
-            "Diagnostic: "
-            + json.dumps(
-                diagnostic,
-                ensure_ascii=False,
-                default=str,
-            )[:3000]
-        )
+            try:
+                error_body = exc.read().decode(
+                    "utf-8",
+                    errors="replace",
+                )
+            except Exception:
+                pass
 
-    return analysis
+            last_error = RuntimeError(
+                f"Cloudflare HTTP {exc.code}: "
+                f"{error_body[:1500]}"
+            )
+
+            print(
+                f"Cloudflare HTTP error on attempt "
+                f"{attempt}/{MAX_ATTEMPTS}: {last_error}"
+            )
+
+            # Retry only errors that may be temporary.
+            if exc.code not in (408, 425, 429, 500, 502, 503, 504):
+                raise last_error from exc
+
+        except (
+            TimeoutError,
+            urllib.error.URLError,
+            ConnectionError,
+        ) as exc:
+            last_error = exc
+
+            print(
+                f"Cloudflare network/timeout error on attempt "
+                f"{attempt}/{MAX_ATTEMPTS}: {exc}"
+            )
+
+        except RuntimeError as exc:
+            last_error = exc
+
+            print(
+                f"Cloudflare response error on attempt "
+                f"{attempt}/{MAX_ATTEMPTS}: {exc}"
+            )
+
+            # Response parsing/API errors usually will not improve
+            # with a retry, so stop here.
+            raise
+
+        if attempt < MAX_ATTEMPTS:
+            delay = 10 * attempt
+            print(f"Retrying in {delay} seconds...")
+            time.sleep(delay)
+
+    raise RuntimeError(
+        f"Cloudflare AI request failed after "
+        f"{MAX_ATTEMPTS} attempts. Last error: {last_error}"
+    )
 
 
-# =========================================================
-# Standalone preview
-# =========================================================
+# ============================================================
+# Local preview
+# ============================================================
 
 def main():
-    print("در حال دریافت خبرهای مرتبط با بازار جهانی طلا...")
+    print("FundBoard Gold News Analyzer")
+    print("Fetching recent gold-market news...")
 
     articles = fetch_news()
-    selected = select_relevant_news(articles)
+    selected_articles = select_relevant_news(articles)
 
-    print(f"تعداد خبرهای مرتبط: {len(articles)}")
-    print(f"تعداد خبرهای انتخاب‌شده: {len(selected)}")
-
-    if not selected:
-        print("خبر مرتبط کافی پیدا نشد؛ تحلیل تولید نشد.")
-        return
-
-    for index, article in enumerate(selected, start=1):
-        print(
-            f"{index}. {article['title']} "
-            f"— {article['source']}"
+    if not selected_articles:
+        raise RuntimeError(
+            "No relevant recent gold news was found."
         )
 
-    print("\nدر حال تولید تحلیل با Cloudflare AI...")
+    print("Generating Persian analysis...")
+    analysis = analyze_news(selected_articles)
 
-    analysis = analyze_news(selected)
-
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print(analysis)
-    print("=" * 50)
+    print("=" * 60)
 
 
 if __name__ == "__main__":
