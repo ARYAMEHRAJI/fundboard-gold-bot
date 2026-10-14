@@ -2,8 +2,8 @@ name: Publish FundBoard Gold Analysis
 
 on:
   schedule:
-    # 10:00 and 18:00 Iran time (UTC+3:30)
-    - cron: "30 6,14 * * *"
+    # 10:07 and 18:07 Iran time (UTC+3:30)
+    - cron: "7 6,14 * * *"
 
   workflow_dispatch:
     inputs:
