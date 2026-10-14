@@ -128,11 +128,11 @@ def fetch(url):
 
 def identify_name(text, allowed):
     text = norm(text)
-
     candidates = list(allowed.keys()) + list(ALIASES.keys())
-    candidates = sorted(candidates, key=lambda item: len(norm(item)), reverse=True)
 
-    for candidate in candidates:
+    for candidate in sorted(
+        candidates, key=lambda item: len(norm(item)), reverse=True
+    ):
         if norm(candidate) in text:
             canonical = ALIASES.get(candidate, candidate)
             if canonical in allowed:
@@ -141,26 +141,7 @@ def identify_name(text, allowed):
     return None
 
 
-def cell_labels(cell):
-    """برچسب‌های احتمالی یک سلول از HTML."""
-    values = []
-
-    for attr in ("data-title", "data-label", "aria-label", "title"):
-        value = cell.get(attr)
-        if value:
-            values.append(norm(value))
-
-    classes = cell.get("class", [])
-    if isinstance(classes, str):
-        classes = classes.split()
-
-    values.extend(norm(value) for value in classes)
-
-    return " ".join(values)
-
-
 def header_kind(text):
-    """تشخیص نوع ستون از عنوان آن، بدون فرض شماره ستون."""
     text = norm(text)
 
     if not text:
@@ -201,10 +182,6 @@ def header_kind(text):
 
 
 def get_table_headers(table):
-    """
-    هدرهای هر ردیف را بررسی می‌کند و اولین ردیف دارای
-    عنوان‌های قابل تشخیص را برای نگاشت ستون‌ها برمی‌گزیند.
-    """
     best_headers = []
     best_score = 0
 
@@ -213,9 +190,10 @@ def get_table_headers(table):
         if not cells:
             continue
 
-        texts = [cell.get_text(" ", strip=True) for cell in cells]
-        kinds = [header_kind(text) for text in texts]
-
+        kinds = [
+            header_kind(cell.get_text(" ", strip=True))
+            for cell in cells
+        ]
         score = sum(kind is not None for kind in kinds)
 
         if score > best_score:
@@ -225,56 +203,80 @@ def get_table_headers(table):
     return best_headers
 
 
-def find_price_cell(cells, headers):
+def get_cell_value(cell):
+    # اگر مقدار عددی در attribute نگهداری شده باشد، آن را بررسی می‌کنیم.
+    for attr in ("data-value", "data-price", "data-live-price"):
+        value = cell.get(attr)
+        if value:
+            parsed = num(value)
+            if parsed is not None and parsed > 0:
+                return parsed
+
+    return num(cell.get_text(" ", strip=True))
+
+
+def get_cell_kind(cell):
+    labels = []
+
+    for attr in ("data-title", "data-label", "aria-label", "title"):
+        value = cell.get(attr)
+        if value:
+            labels.append(value)
+
+    classes = cell.get("class", [])
+    if isinstance(classes, str):
+        classes = classes.split()
+
+    # کلاس‌های HTML فقط به‌عنوان سرنخ استفاده می‌شوند.
+    labels.extend(classes)
+    return header_kind(" ".join(labels))
+
+
+def find_column_value(cells, headers, target):
     """
-    ابتدا از برچسب خود سلول و سپس از هدر متناظر استفاده می‌کند.
-    اگر قیمت قابل شناسایی نباشد، حدس نمی‌زند.
+    ابتدا ستون متناظر با هدر جدول را بررسی می‌کند.
+    در صورت نبود هدر قابل استفاده، ویژگی خود سلول را بررسی می‌کند.
+    هیچ‌گاه به‌طور خودکار اولین عدد ردیف را قیمت فرض نمی‌کند.
     """
     candidates = []
 
     for index, cell in enumerate(cells):
-        label = cell_labels(cell)
-        kind = header_kind(label)
-
-        # ویژگی‌های خود سلول بر هدر عمومی اولویت دارند.
-        if kind == "price":
-            candidates.append((0, cell, label))
+        value = get_cell_value(cell)
+        if value is None or value <= 0:
             continue
 
-        if kind is not None:
-            continue
+        kind = get_cell_kind(cell)
 
-        if index < len(headers) and headers[index] == "price":
-            candidates.append((1, cell, label))
+        if kind == target:
+            candidates.append((0, value))
+        elif kind is None and index < len(headers):
+            if headers[index] == target:
+                candidates.append((1, value))
 
     if not candidates:
         return None
 
-    for _, cell, label in sorted(candidates, key=lambda item: item[0]):
-        value = num(cell.get_text(" ", strip=True))
-        if value is not None and value > 0:
-            return value
-
-    return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
 
 
-def find_change_cell(cells, headers):
-    """سلول تغییر روزانه را با عنوان خودش یا هدر متناظر پیدا می‌کند."""
+def find_change_text(cells, headers):
     candidates = []
 
     for index, cell in enumerate(cells):
-        label = cell_labels(cell)
-        kind = header_kind(label)
+        kind = get_cell_kind(cell)
 
         if kind == "change":
-            candidates.append((0, cell))
-        elif kind is None and index < len(headers) and headers[index] == "change":
-            candidates.append((1, cell))
+            candidates.append((0, cell.get_text(" ", strip=True)))
+        elif kind is None and index < len(headers):
+            if headers[index] == "change":
+                candidates.append((1, cell.get_text(" ", strip=True)))
 
-    for _, cell in sorted(candidates, key=lambda item: item[0]):
-        text = cell.get_text(" ", strip=True)
-        if text:
-            return text
+    candidates.sort(key=lambda item: item[0])
+
+    for _, value in candidates:
+        if value.strip():
+            return value
 
     return ""
 
@@ -282,23 +284,16 @@ def find_change_cell(cells, headers):
 def parse_change(text):
     text = norm(text)
 
-    percent_match = re.search(
+    match = re.search(
         r"\(\s*([-+]?\d+(?:\.\d+)?)\s*%\s*\)",
         text
     )
 
-    percent = (
-        float(percent_match.group(1))
-        if percent_match
-        else None
-    )
+    percent = float(match.group(1)) if match else None
 
     remainder = text
-    if percent_match:
-        remainder = (
-            remainder[:percent_match.start()]
-            + remainder[percent_match.end():]
-        )
+    if match:
+        remainder = remainder[:match.start()] + remainder[match.end():]
 
     amount = num(remainder)
 
@@ -306,7 +301,8 @@ def parse_change(text):
 
 
 def parse_row(row, allowed, url, headers):
-    cells = row.find_all("td", recursive=False)
+    # اصلاح مهم: نام و قیمت ممکن است بین th و td توزیع شده باشند.
+    cells = row.find_all(["th", "td"], recursive=False)
 
     if not cells:
         return None
@@ -317,19 +313,23 @@ def parse_row(row, allowed, url, headers):
     if not key:
         return None
 
-    price = find_price_cell(cells, headers)
+    price = find_column_value(cells, headers, "price")
 
-    # اگر قیمت با هدر یا برچسب سلول مشخص نشده باشد،
-    # ردیف رد می‌شود؛ هیچ شماره ستونی حدس زده نمی‌شود.
     if price is None or price <= 0:
         print(
-            f"ردیف بدون قیمت قابل تشخیص: {key} | "
-            f"سلول‌ها: {[c.get_text(' ', strip=True) for c in cells]}"
+            f"ردیف رد شد؛ قیمت معتبر پیدا نشد: {key} | "
+            f"هدرها={headers} | "
+            f"سلول‌ها={[c.get_text(' ', strip=True) for c in cells]}"
         )
         return None
 
-    change_text = find_change_cell(cells, headers)
+    change_text = find_change_text(cells, headers)
     percent, amount = parse_change(change_text)
+
+    print(
+        f"DEBUG {key}: raw_price={price}, "
+        f"change={change_text!r}"
+    )
 
     return {
         "key": key,
@@ -349,12 +349,10 @@ def scrape_page(url, allowed, output):
     for table in soup.find_all("table"):
         headers = get_table_headers(table)
 
-        # جدول باید هدر مشخص قیمت داشته باشد.
         if "price" not in headers:
             continue
 
         matched_table = True
-
         print(f"\nصفحه: {url}")
         print("هدرهای تشخیص‌داده‌شده:", headers)
 
@@ -376,11 +374,6 @@ def scrape_page(url, allowed, output):
             ):
                 output[key] = record
 
-            print(
-                f"قیمت تشخیص‌داده‌شده: {record['name']} = "
-                f"{fmt(record['price_rial'] / 10)} تومان"
-            )
-
     print(f"صفحه دریافت شد: {url}")
     print(f"جدول دارای هدر قیمت: {matched_table}")
     print(f"اقلام معتبر این صفحه: {found}")
@@ -391,10 +384,12 @@ def scrape(kind):
         allowed = CURRENCIES
         urls = [CURRENCY_URL]
         required = {"دلار آمریکا"}
+
     elif kind == "gold":
         allowed = GOLD
         urls = [GOLD_URL, COIN_URL]
         required = {"طلای 18 عیار / 750", "سکه امامی"}
+
     else:
         raise ValueError("MARKET_KIND باید currency یا gold باشد.")
 
@@ -403,13 +398,13 @@ def scrape(kind):
     for url in urls:
         scrape_page(url, allowed, output)
 
-    missing = required - set(output.keys())
+    missing = required - set(output)
 
     if missing:
-        missing_names = "؛ ".join(sorted(missing))
         raise RuntimeError(
-            f"قیمت اقلام ضروری استخراج نشد: {missing_names}؛ "
-            "انتشار لغو شد. هدرها و سلول‌های تشخیص‌داده‌شده را بررسی کنید."
+            "قیمت اقلام ضروری استخراج نشد: "
+            + "؛ ".join(sorted(missing))
+            + "؛ انتشار لغو شد."
         )
 
     if not output:
@@ -428,13 +423,9 @@ def format_change(item):
         parts.append(f"{sign}{fa(f'{percent:g}')}٪")
 
     if amount is not None:
-        if amount < 0:
-            rial = "−" + fmt(abs(amount))
-            toman = "−" + fmt(abs(amount) / 10)
-        else:
-            sign = "+" if amount > 0 else ""
-            rial = sign + fmt(amount)
-            toman = sign + fmt(amount / 10)
+        sign = "+" if amount > 0 else ("−" if amount < 0 else "")
+        rial = sign + fmt(abs(amount))
+        toman = sign + fmt(abs(amount) / 10)
 
         parts.append(
             f"{fa(rial)} ریال "
