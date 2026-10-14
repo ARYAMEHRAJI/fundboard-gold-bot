@@ -10,11 +10,11 @@ import requests
 from bs4 import BeautifulSoup
 
 
-BASE_URL = "https://www.tgju.org"
+BASE = "https://www.tgju.org"
 
-CURRENCY_URL = f"{BASE_URL}/currency"
-GOLD_URL = f"{BASE_URL}/gold-chart"
-COIN_URL = f"{BASE_URL}/coin"
+CURRENCY_URL = f"{BASE}/currency"
+GOLD_URL = f"{BASE}/gold-chart"
+COIN_URL = f"{BASE}/coin"
 
 CURRENCIES = {
     "دلار": "دلار آمریکا",
@@ -60,75 +60,46 @@ GOLD = {
     "سکه گرمی": "سکه گرمی",
 }
 
+ALIASES = {
+    "طلای 18 عیار/750": "طلای 18 عیار / 750",
+    "طلای 18 عیار/740": "طلای 18 عیار / 740",
+    "نیم‌سکه": "نیم سکه",
+    "ربع‌سکه": "ربع سکه",
+}
 
-def normalize(text):
-    text = str(text).translate(str.maketrans(
+
+def norm(s):
+    s = str(s).translate(str.maketrans(
         "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
         "01234567890123456789"
     ))
-    text = text.replace("\u200c", " ")
-    text = text.replace("\u200e", "").replace("\u200f", "")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip().lower()
+    s = s.replace("\u200c", " ").replace("\u200e", "")
+    s = s.replace("\u200f", "")
+    return re.sub(r"\s+", " ", s).strip().lower()
 
 
-def number(text):
-    text = normalize(text)
-    text = text.replace(",", "").replace("٬", "").replace("،", "")
-    match = re.search(r"(?<![a-zA-Z])[-+]?\d+(?:\.\d+)?", text)
-    if not match:
+def num(s):
+    s = norm(s).replace(",", "").replace("٬", "").replace("،", "")
+    m = re.search(r"[-+]?\d+(?:\.\d+)?", s)
+    if not m:
         return None
     try:
-        return float(match.group())
+        return float(m.group())
     except ValueError:
         return None
 
 
-def fa(text):
-    return str(text).translate(str.maketrans(
+def fa(s):
+    return str(s).translate(str.maketrans(
         "0123456789", "۰۱۲۳۴۵۶۷۸۹"
     ))
 
 
-def fmt(value):
-    return f"{int(round(value)):,}"
+def fmt(n):
+    return f"{int(round(n)):,}"
 
 
-def find_name(row_text, allowed):
-    normalized_row = normalize(row_text)
-
-    # نام‌های طولانی‌تر ابتدا بررسی می‌شوند تا تطبیق دقیق‌تر باشد.
-    for source_name in sorted(allowed, key=len, reverse=True):
-        if normalize(source_name) in normalized_row:
-            return source_name
-
-    return None
-
-
-def parse_change(text):
-    """
-    تلاش برای استخراج درصد و مبلغ تغییر از متن ستون تغییر.
-    اگر هر کدام در متن نباشد، مقدار آن None باقی می‌ماند.
-    """
-    text = normalize(text)
-
-    percent_match = re.search(
-        r"\(\s*([-+]?\d+(?:\.\d+)?)\s*%\s*\)", text
-    )
-    percent = float(percent_match.group(1)) if percent_match else None
-
-    remainder = text
-    if percent_match:
-        remainder = (
-            remainder[:percent_match.start()]
-            + remainder[percent_match.end():]
-        )
-
-    amount = number(remainder)
-    return percent, amount
-
-
-def fetch_page(url):
+def fetch(url):
     response = requests.get(
         url,
         headers={
@@ -144,147 +115,190 @@ def fetch_page(url):
     return BeautifulSoup(response.text, "html.parser")
 
 
-def scrape_one_page(url, allowed, results):
-    soup = fetch_page(url)
+def identify_name(text, allowed):
+    t = norm(text)
+    names = list(allowed.keys()) + list(ALIASES.keys())
+    for candidate in sorted(names, key=len, reverse=True):
+        if norm(candidate) in t:
+            canonical = ALIASES.get(candidate, candidate)
+            if canonical in allowed:
+                return canonical
+    return None
+
+
+def parse_row(row, allowed, url):
+    cells = row.find_all("td", recursive=False)
+    if len(cells) < 3:
+        return None
+
+    row_text = row.get_text(" ", strip=True)
+    key = identify_name(row_text, allowed)
+    if not key:
+        return None
+
+    texts = [c.get_text(" ", strip=True) for c in cells]
+
+    # قیمت زنده در جدول TGJU در ستون دومِ قابل مشاهده است.
+    # اگر عدد معتبر نباشد، ردیف را رد می‌کنیم و حدس نمی‌زنیم.
+    price = num(texts[1])
+    if price is None or price <= 0:
+        return None
+
+    # ستون سوم شامل درصد و مبلغ تغییر است.
+    change_text = texts[2]
+    change_norm = norm(change_text)
+
+    pm = re.search(r"\(\s*([-+]?\d+(?:\.\d+)?)\s*%\s*\)", change_norm)
+    percent = float(pm.group(1)) if pm else None
+
+    remainder = change_norm
+    if pm:
+        remainder = (
+            remainder[:pm.start()] + remainder[pm.end():]
+        )
+
+    change_amount = num(remainder)
+
+    return {
+        "key": key,
+        "name": allowed[key],
+        "price_rial": price,
+        "change_percent": percent,
+        "change_rial": change_amount,
+        "source": url,
+    }
+
+
+def scrape_page(url, allowed, output):
+    soup = fetch(url)
     found = 0
 
-    for row in soup.select("tr"):
-        cells = row.find_all("td", recursive=False)
-        if len(cells) < 2:
+    # ابتدا جدول‌هایی که هدر قیمت زنده دارند بررسی می‌شوند.
+    tables = soup.find_all("table")
+    matched_table = False
+
+    for table in tables:
+        headers = [
+            norm(th.get_text(" ", strip=True))
+            for th in table.find_all("th")
+        ]
+
+        has_live_price = any(
+            "قیمت زنده" in h or h == "rates"
+            for h in headers
+        )
+
+        if not has_live_price:
             continue
 
-        row_text = row.get_text(" ", strip=True)
-        source_name = find_name(row_text, allowed)
+        matched_table = True
 
-        if source_name is None:
-            continue
+        for row in table.find_all("tr"):
+            record = parse_row(row, allowed, url)
+            if not record:
+                continue
 
-        # در جدول‌های معمول TGJU، ستون دوم قیمت جاری است.
-        price = number(cells[1].get_text(" ", strip=True))
-        if price is None or price <= 0:
-            continue
+            key = record["key"]
+            old = output.get(key)
 
-        change_percent = None
-        change_amount_rial = None
-
-        # ابتدا ستون تغییر احتمالی بررسی می‌شود.
-        if len(cells) >= 3:
-            change_text = " ".join(
-                cell.get_text(" ", strip=True) for cell in cells[2:]
-            )
-            change_percent, change_amount_rial = parse_change(change_text)
-
-        # اگر درصد در سلول‌ها نبود، متن کل ردیف هم بررسی می‌شود.
-        if change_percent is None:
-            row_percent, row_amount = parse_change(row_text)
-            change_percent = row_percent
-            if change_amount_rial is None:
-                change_amount_rial = row_amount
-
-        record = {
-            "key": source_name,
-            "name": allowed[source_name],
-            "price_rial": price,
-            "price_toman": price / 10,
-            "change_percent": change_percent,
-            "change_rial": change_amount_rial,
-            "source": url,
-        }
-
-        old = results.get(source_name)
-
-        if old is None:
-            results[source_name] = record
-            found += 1
-        elif (
-            old["change_percent"] is None
-            and record["change_percent"] is not None
-        ):
-            results[source_name] = record
+            # اگر نامی در چند جدول تکرار شده باشد، رکورد دارای
+            # اطلاعات تغییر کامل‌تر نگه داشته می‌شود.
+            if old is None or (
+                old["change_percent"] is None
+                and record["change_percent"] is not None
+            ):
+                output[key] = record
+                found += 1
 
     print(f"صفحه دریافت شد: {url}")
-    print(f"اقلام قابل شناسایی: {found}")
+    print(f"جدول دارای هدر قیمت زنده: {matched_table}")
+    print(f"اقلام معتبر این صفحه: {found}")
 
 
-def scrape_prices(kind):
-    results = {}
-
+def scrape(kind):
     if kind == "currency":
-        scrape_one_page(CURRENCY_URL, CURRENCIES, results)
+        allowed = CURRENCIES
+        urls = [CURRENCY_URL]
     elif kind == "gold":
-        scrape_one_page(GOLD_URL, GOLD, results)
-        scrape_one_page(COIN_URL, GOLD, results)
+        allowed = GOLD
+        urls = [GOLD_URL, COIN_URL]
     else:
         raise ValueError("MARKET_KIND باید currency یا gold باشد.")
 
-    if not results:
+    output = {}
+
+    for url in urls:
+        scrape_page(url, allowed, output)
+
+    if not output:
         raise RuntimeError(
-            "قیمت معتبری استخراج نشد؛ انتشار لغو شد. "
-            "ساختار جدول منبع احتمالاً تغییر کرده است."
+            "قیمت معتبر استخراج نشد؛ پیام منتشر نمی‌شود. "
+            "ساختار جدول منبع با قالب مورد انتظار مطابقت ندارد."
         )
 
-    print(f"نوع بازار: {kind}")
-    print(f"تعداد اقلام استخراج‌شده: {len(results)}")
-    return list(results.values())
+    return list(output.values())
 
 
-def change_description(item):
-    percent = item["change_percent"]
-    amount_rial = item["change_rial"]
+def format_change(item):
     parts = []
+    percent = item["change_percent"]
+    amount = item["change_rial"]
 
     if percent is not None:
         sign = "+" if percent > 0 else ""
         parts.append(f"{sign}{fa(f'{percent:g}')}٪")
 
-    if amount_rial is not None:
-        sign = "+" if amount_rial > 0 else ""
-        if amount_rial < 0:
-            rial = "−" + fmt(abs(amount_rial))
-            toman = "−" + fmt(abs(amount_rial) / 10)
+    if amount is not None:
+        if amount < 0:
+            rial = "−" + fmt(abs(amount))
+            toman = "−" + fmt(abs(amount) / 10)
         else:
-            rial = sign + fmt(amount_rial)
-            toman = sign + fmt(amount_rial / 10)
+            sign = "+" if amount > 0 else ""
+            rial = sign + fmt(amount)
+            toman = sign + fmt(amount / 10)
 
         parts.append(
             f"{fa(rial)} ریال (معادل {fa(toman)} تومان)"
         )
 
     if not parts:
-        return "   تغییر روزانه: در منبع قابل استخراج نبود"
+        return "   تغییر روزانه: اطلاعات موجود نیست"
 
     return "   تغییر روزانه: " + " | ".join(parts)
 
 
 def build_messages(kind, items):
     now = datetime.now(ZoneInfo("Asia/Tehran"))
-    date_text = fa(now.strftime("%Y/%m/%d"))
-    time_text = fa(now.strftime("%H:%M"))
+    date = fa(now.strftime("%Y/%m/%d"))
+    time = fa(now.strftime("%H:%M"))
 
-    if kind == "currency":
-        title = "💱 <b>قیمت ارزها در بازار ایران</b>"
-    else:
-        title = "🪙 <b>قیمت طلا و انواع سکه در بازار ایران</b>"
+    title = (
+        "💱 <b>قیمت ارزها در بازار ایران</b>"
+        if kind == "currency"
+        else "🪙 <b>قیمت طلا و انواع سکه در بازار ایران</b>"
+    )
 
     lines = [
         title,
-        f"🕒 زمان گزارش: {date_text} - {time_text}",
+        f"🕒 زمان گزارش: {date} - {time}",
         "",
     ]
 
     for item in items:
-        name = html.escape(item["name"])
-        price = fa(fmt(item["price_toman"]))
-        lines.append(f"• {name}: <b>{price} تومان</b>")
-        lines.append(change_description(item))
+        # نرخ‌های جدول TGJU به ریال هستند.
+        price_toman = item["price_rial"] / 10
+        lines.append(
+            f"• {html.escape(item['name'])}: "
+            f"<b>{fa(fmt(price_toman))} تومان</b>"
+        )
+        lines.append(format_change(item))
 
     lines.extend([
         "",
         'منبع: <a href="https://www.tgju.org/">TGJU</a>',
     ])
 
-    messages = []
-    current = []
+    messages, current = [], []
 
     for line in lines:
         if len("\n".join(current + [line])) > 3500 and current:
@@ -319,7 +333,7 @@ def send_telegram(message):
     response.raise_for_status()
 
     if not response.json().get("ok"):
-        raise RuntimeError("ارسال پیام توسط تلگرام تأیید نشد.")
+        raise RuntimeError("تلگرام ارسال پیام را تأیید نکرد.")
 
 
 def main():
@@ -329,16 +343,27 @@ def main():
         == "true"
     )
 
-    items = scrape_prices(kind)
+    items = scrape(kind)
+
+    # جلوگیری از انتشار قیمت‌های غیرمنطقی یا صفر
+    for item in items:
+        if item["price_rial"] <= 0:
+            raise RuntimeError(
+                f"قیمت نامعتبر برای {item['name']}؛ انتشار لغو شد."
+            )
+
     messages = build_messages(kind, items)
 
+    print(f"نوع بازار: {kind}")
+    print(f"تعداد اقلام: {len(items)}")
     print(f"تعداد پیام‌ها: {len(messages)}")
+
     for i, message in enumerate(messages, 1):
         print(f"\n--- پیام {i}/{len(messages)} ---")
         print(message)
 
     if not publish:
-        print("\nحالت آزمایشی: پیام ارسال نشد.")
+        print("\nحالت آزمایشی: هیچ پیامی ارسال نشد.")
         return
 
     for message in messages:
