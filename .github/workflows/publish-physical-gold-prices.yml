@@ -1,0 +1,48 @@
+
+name: Publish FundBoard Physical Gold Prices
+
+on:
+  schedule:
+    # Every hour from 11:30 to 18:30 Iran time
+    - cron: "0 8-15 * * *"
+
+  workflow_dispatch:
+    inputs:
+      publish_now:
+        description: "Publish to Telegram now"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fundboard-physical-gold-prices
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Fetch and publish physical gold prices
+        env:
+          MARKET_KIND: gold
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          PUBLISH_TO_TELEGRAM: ${{ github.event_name == 'schedule' || inputs.publish_now }}
+        run: python publish_market_prices.py
+        
