@@ -17,7 +17,6 @@ GOLD_URL = f"{BASE}/gold-chart"
 COIN_URL = f"{BASE}/coin"
 
 CURRENCIES = {
-    "دلار": "دلار آمریکا",
     "دلار آمریکا": "دلار آمریکا",
     "یورو": "یورو",
     "درهم امارات": "درهم امارات",
@@ -61,6 +60,7 @@ GOLD = {
 }
 
 ALIASES = {
+    "دلار": "دلار آمریکا",
     "طلای 18 عیار/750": "طلای 18 عیار / 750",
     "طلای 18 عیار/740": "طلای 18 عیار / 740",
     "طلای ۱۸ عیار / ۷۵۰": "طلای 18 عیار / 750",
@@ -81,13 +81,13 @@ def norm(value):
     value = value.replace("\u200e", "")
     value = value.replace("\u200f", "")
     value = value.replace("\xa0", " ")
-    return re.sub(r"\s+", " ", value).strip().lower()
+    value = re.sub(r"\s+", " ", value).strip().lower()
+    return value
 
 
 def num(value):
     value = norm(value)
-    value = value.replace(",", "").replace("٬", "")
-    value = value.replace("،", "")
+    value = value.replace(",", "").replace("٬", "").replace("،", "")
 
     match = re.search(r"[-+]?\d+(?:\.\d+)?", value)
     if not match:
@@ -127,18 +127,26 @@ def fetch(url):
 
 
 def identify_name(text, allowed):
-    text = norm(text)
-    candidates = list(allowed.keys()) + list(ALIASES.keys())
+    """
+    نام باید دقیقاً با یکی از نام‌های شناخته‌شده مطابقت داشته باشد.
+    تطبیق زیررشته‌ای ممنوع است تا مثلاً دلار هنگ‌کنگ به‌اشتباه
+    دلار آمریکا تشخیص داده نشود.
+    """
+    cleaned = norm(text)
 
-    for candidate in sorted(
-        candidates, key=lambda item: len(norm(item)), reverse=True
-    ):
-        if norm(candidate) in text:
-            canonical = ALIASES.get(candidate, candidate)
-            if canonical in allowed:
-                return canonical
+    # حذف فاصله‌های اضافی اطراف جداکننده‌ها
+    cleaned = re.sub(r"\s*/\s*", "/", cleaned)
 
-    return None
+    candidates = {}
+
+    for key in allowed:
+        candidates[norm(key)] = key
+
+    for alias, canonical in ALIASES.items():
+        if canonical in allowed:
+            candidates[norm(alias)] = canonical
+
+    return candidates.get(cleaned)
 
 
 def header_kind(text):
@@ -194,6 +202,7 @@ def get_table_headers(table):
             header_kind(cell.get_text(" ", strip=True))
             for cell in cells
         ]
+
         score = sum(kind is not None for kind in kinds)
 
         if score > best_score:
@@ -203,19 +212,7 @@ def get_table_headers(table):
     return best_headers
 
 
-def get_cell_value(cell):
-    # اگر مقدار عددی در attribute نگهداری شده باشد، آن را بررسی می‌کنیم.
-    for attr in ("data-value", "data-price", "data-live-price"):
-        value = cell.get(attr)
-        if value:
-            parsed = num(value)
-            if parsed is not None and parsed > 0:
-                return parsed
-
-    return num(cell.get_text(" ", strip=True))
-
-
-def get_cell_kind(cell):
+def cell_kind(cell):
     labels = []
 
     for attr in ("data-title", "data-label", "aria-label", "title"):
@@ -227,58 +224,34 @@ def get_cell_kind(cell):
     if isinstance(classes, str):
         classes = classes.split()
 
-    # کلاس‌های HTML فقط به‌عنوان سرنخ استفاده می‌شوند.
     labels.extend(classes)
+
     return header_kind(" ".join(labels))
 
 
-def find_column_value(cells, headers, target):
-    """
-    ابتدا ستون متناظر با هدر جدول را بررسی می‌کند.
-    در صورت نبود هدر قابل استفاده، ویژگی خود سلول را بررسی می‌کند.
-    هیچ‌گاه به‌طور خودکار اولین عدد ردیف را قیمت فرض نمی‌کند.
-    """
-    candidates = []
+def cell_number(cell):
+    for attr in ("data-value", "data-price", "data-live-price"):
+        value = cell.get(attr)
+        if value:
+            parsed = num(value)
+            if parsed is not None and parsed > 0:
+                return parsed
 
+    return num(cell.get_text(" ", strip=True))
+
+
+def find_cell_index(cells, headers, target):
+    # ابتدا ویژگی خود سلول را بررسی می‌کنیم.
     for index, cell in enumerate(cells):
-        value = get_cell_value(cell)
-        if value is None or value <= 0:
-            continue
+        if cell_kind(cell) == target:
+            return index
 
-        kind = get_cell_kind(cell)
+    # سپس هدر متناظر با ستون را بررسی می‌کنیم.
+    for index, kind in enumerate(headers):
+        if kind == target and index < len(cells):
+            return index
 
-        if kind == target:
-            candidates.append((0, value))
-        elif kind is None and index < len(headers):
-            if headers[index] == target:
-                candidates.append((1, value))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda item: item[0])
-    return candidates[0][1]
-
-
-def find_change_text(cells, headers):
-    candidates = []
-
-    for index, cell in enumerate(cells):
-        kind = get_cell_kind(cell)
-
-        if kind == "change":
-            candidates.append((0, cell.get_text(" ", strip=True)))
-        elif kind is None and index < len(headers):
-            if headers[index] == "change":
-                candidates.append((1, cell.get_text(" ", strip=True)))
-
-    candidates.sort(key=lambda item: item[0])
-
-    for _, value in candidates:
-        if value.strip():
-            return value
-
-    return ""
+    return None
 
 
 def parse_change(text):
@@ -301,33 +274,59 @@ def parse_change(text):
 
 
 def parse_row(row, allowed, url, headers):
-    # اصلاح مهم: نام و قیمت ممکن است بین th و td توزیع شده باشند.
+    # تمام سلول‌ها به ترتیب واقعی خوانده می‌شوند.
     cells = row.find_all(["th", "td"], recursive=False)
 
     if not cells:
         return None
 
-    row_text = row.get_text(" ", strip=True)
-    key = identify_name(row_text, allowed)
+    # نام را فقط از سلول نام می‌خوانیم، نه کل ردیف.
+    name_index = find_cell_index(cells, headers, "name")
 
-    if not key:
+    if name_index is None:
+        # در بعضی جدول‌ها سلول نام th است و هدرها با آن هم‌تراز نیستند.
+        for index, cell in enumerate(cells):
+            key = identify_name(cell.get_text(" ", strip=True), allowed)
+            if key:
+                name_index = index
+                break
+
+    if name_index is None:
         return None
 
-    price = find_column_value(cells, headers, "price")
+    key = identify_name(
+        cells[name_index].get_text(" ", strip=True),
+        allowed
+    )
 
-    if price is None or price <= 0:
+    if key is None:
+        return None
+
+    price_index = find_cell_index(cells, headers, "price")
+
+    if price_index is None or price_index == name_index:
         print(
-            f"ردیف رد شد؛ قیمت معتبر پیدا نشد: {key} | "
-            f"هدرها={headers} | "
-            f"سلول‌ها={[c.get_text(' ', strip=True) for c in cells]}"
+            f"قیمت قابل شناسایی نیست: {key} | "
+            f"سلول‌ها: {[c.get_text(' ', strip=True) for c in cells]}"
         )
         return None
 
-    change_text = find_change_text(cells, headers)
+    price = cell_number(cells[price_index])
+
+    if price is None or price <= 0:
+        print(f"قیمت نامعتبر برای {key}: {price}")
+        return None
+
+    change_index = find_cell_index(cells, headers, "change")
+    change_text = ""
+
+    if change_index is not None and change_index != name_index:
+        change_text = cells[change_index].get_text(" ", strip=True)
+
     percent, amount = parse_change(change_text)
 
     print(
-        f"DEBUG {key}: raw_price={price}, "
+        f"DEBUG {key}: price_rial={price}, "
         f"change={change_text!r}"
     )
 
@@ -354,7 +353,7 @@ def scrape_page(url, allowed, output):
 
         matched_table = True
         print(f"\nصفحه: {url}")
-        print("هدرهای تشخیص‌داده‌شده:", headers)
+        print("هدرها:", headers)
 
         for row in table.find_all("tr"):
             record = parse_row(row, allowed, url, headers)
@@ -398,7 +397,7 @@ def scrape(kind):
     for url in urls:
         scrape_page(url, allowed, output)
 
-    missing = required - set(output)
+    missing = required - set(output.keys())
 
     if missing:
         raise RuntimeError(
@@ -519,13 +518,6 @@ def main():
     )
 
     items = scrape(kind)
-
-    for item in items:
-        if item["price_rial"] <= 0:
-            raise RuntimeError(
-                f"قیمت نامعتبر برای {item['name']}؛ انتشار لغو شد."
-            )
-
     messages = build_messages(kind, items)
 
     print(f"نوع بازار: {kind}")
