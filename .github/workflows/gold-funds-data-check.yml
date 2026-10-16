@@ -1,5 +1,5 @@
 
-name: Gold Funds Data Check - Dry Run
+name: Gold Funds Data Check - Fundbase
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  inspect-funds:
+  inspect-fundbase:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,46 +20,44 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Fetch and inspect fund data
+      - name: Inspect Fundbase page
         id: inspect
         continue-on-error: true
         run: python -u analyze_iran_gold_funds.py
 
-      - name: Display diagnostic report
+      - name: Display diagnostic
         if: always()
         shell: bash
         run: |
-          if [ -f gold_funds_diagnostic.txt ]; then
-            cat gold_funds_diagnostic.txt
+          if [ -f fundbase_page_diagnostic.txt ]; then
+            cat fundbase_page_diagnostic.txt
           else
-            echo "Diagnostic report was not created."
+            echo "No report was generated."
           fi
 
-      - name: Display error details
+      - name: Display error
         if: always()
         shell: bash
         run: |
-          if [ -f gold_funds_error.txt ]; then
-            echo "===== ERROR DETAILS ====="
-            cat gold_funds_error.txt
+          if [ -f fundbase_error.txt ]; then
+            cat fundbase_error.txt
           else
-            echo "No error file was created."
+            echo "No error file was generated."
           fi
 
-      - name: Upload diagnostic files
+      - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gold-funds-debug
+          name: fundbase-gold-diagnostics
           path: |
-            gold_funds_raw.json
-            gold_funds_diagnostic.txt
-            gold_funds_error.txt
+            fundbase_gold_page.html
+            fundbase_page_diagnostic.json
+            fundbase_page_diagnostic.txt
+            fundbase_error.txt
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Fail if data inspection failed
+      - name: Mark failed inspection
         if: steps.inspect.outcome == 'failure'
-        run: |
-          echo "Data inspection failed. Review the logs and artifact."
-          exit 1
+        run: exit 1
