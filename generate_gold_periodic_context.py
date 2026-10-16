@@ -1,19 +1,19 @@
-"""Fetch dated World Gold Council gold ETF and central-bank context, dry-run only.
-
-This monitor extracts dated source metadata and short text snippets. It does not
-claim that periodic data are daily, and it does not send Telegram messages.
-"""
+"""Inspect official World Gold Council periodic XLSX downloads; dry-run only."""
+import io
 import re
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
+from openpyxl import load_workbook
+
 ETF_PAGE = "https://www.gold.org/goldhub/data/gold-etfs-holdings-and-flows"
 RESERVES_PAGE = "https://www.gold.org/goldhub/data/gold-reserves-by-country"
-BASE = "https://www.gold.org"
+OFFICIAL_HOSTS = {"www.gold.org", "gold.org"}
 TIMEOUT = 25
-MAX_PAGE_AGE_DAYS = 100
+MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
 
 
 class PageParser(HTMLParser):
@@ -32,9 +32,7 @@ class PageParser(HTMLParser):
         if tag in {"script", "style", "noscript", "svg"}:
             self._skip_depth += 1
         if tag == "a" and attrs.get("href"):
-            self.links.append((attrs["href"], ""))
-        if tag in {"p", "h1", "h2", "h3", "li"}:
-            self.text.append("\\n")
+            self.links.append({"href": attrs["href"], "label": ""})
 
     def handle_endtag(self, tag):
         if tag == "title":
@@ -49,141 +47,149 @@ class PageParser(HTMLParser):
         if self._in_title:
             self.title.append(value)
         self.text.append(value)
-        if self.links:
-            href, label = self.links[-1]
-            if not label:
-                self.links[-1] = (href, value)
+        if self.links and not self.links[-1]["label"]:
+            self.links[-1]["label"] = value
+
+
+def request(url):
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname not in OFFICIAL_HOSTS:
+        raise ValueError("Blocked non-official or non-HTTPS source URL")
+    req = urllib.request.Request(url, headers={"User-Agent": "FundBoardGoldBot/1.0 (research draft)"})
+    return urllib.request.urlopen(req, timeout=TIMEOUT)
 
 
 def fetch_page(url):
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "FundBoardGoldBot/1.0 (research draft)"}
-    )
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
+    with request(url) as response:
         final_url = response.geturl()
-        if urlparse(final_url).scheme != "https" or urlparse(final_url).hostname not in {
-            "www.gold.org", "gold.org"
-        }:
+        if urlparse(final_url).scheme != "https" or urlparse(final_url).hostname not in OFFICIAL_HOSTS:
             raise ValueError("Unexpected final URL for World Gold Council source")
-        html = response.read().decode("utf-8", errors="replace")
+        raw = response.read(MAX_DOWNLOAD_BYTES + 1)
+        if len(raw) > MAX_DOWNLOAD_BYTES:
+            raise ValueError("Source page exceeds configured size limit")
     parser = PageParser()
-    parser.feed(html)
+    parser.feed(raw.decode("utf-8", errors="replace"))
     return {
         "url": final_url,
         "title": " ".join(parser.title).strip() or final_url,
         "text": " ".join(" ".join(parser.text).split()),
-        "links": [(urljoin(final_url, href), label) for href, label in parser.links],
+        "links": [
+            {"url": urljoin(final_url, link["href"]), "label": link["label"]}
+            for link in parser.links
+            if urlparse(urljoin(final_url, link["href"])).hostname in OFFICIAL_HOSTS
+            and urlparse(urljoin(final_url, link["href"])).scheme == "https"
+        ],
     }
 
 
-def extract_dates(text):
+def find_xlsx_links(page, keywords):
     found = []
-    months = {
-        "january": 1, "february": 2, "march": 3, "april": 4,
-        "may": 5, "june": 6, "july": 7, "august": 8,
-        "september": 9, "october": 10, "november": 11, "december": 12,
-    }
-    tokens = text.replace(",", " ").replace(".", " ").split()
-    for index, token in enumerate(tokens):
-        cleaned = token.strip()
-        try:
-            if len(cleaned) == 10 and cleaned[4] == "-" and cleaned[7] == "-":
-                found.append((datetime.strptime(cleaned, "%Y-%m-%d").date(), cleaned))
-                continue
-        except ValueError:
-            pass
-        month = months.get(cleaned.lower())
-        if month:
-            try:
-                if index > 0 and tokens[index - 1].isdigit() and int(tokens[index - 1]) <= 31:
-                    day = int(tokens[index - 1])
-                    year = int(tokens[index + 1])
-                    raw = " ".join(tokens[index - 1:index + 2])
-                elif index + 1 < len(tokens):
-                    day = 1
-                    year_index = index + 1
-                    if tokens[index + 1].isdigit() and int(tokens[index + 1]) <= 31 and index + 2 < len(tokens):
-                        day = int(tokens[index + 1])
-                        year_index = index + 2
-                    year = int(tokens[year_index])
-                    raw = " ".join(tokens[index:year_index + 1])
-                else:
-                    continue
-                found.append((datetime(year, month, day).date(), raw))
-            except (ValueError, TypeError, IndexError):
-                continue
-    return sorted(set(found))
-
-def find_latest_etf_article(page):
-    candidates = []
-    for url, label in page["links"]:
-        path = urlparse(url).path.rstrip("/")
-        parts = path.split("/")
-        if len(parts) >= 5 and parts[-4] == "gold-etfs-holdings-and-flows" and parts[-3].isdigit() and parts[-2].isdigit():
-            year, month = int(parts[-3]), int(parts[-2])
-            if 1 <= month <= 12 and urlparse(url).hostname in {"www.gold.org", "gold.org"}:
-                candidates.append((year, month, url))
-        elif len(parts) >= 5 and parts[-4] == "gold-etfs-holdings-flows" and parts[-3].isdigit() and parts[-2].isdigit():
-            year, month = int(parts[-3]), int(parts[-2])
-            if 1 <= month <= 12 and urlparse(url).hostname in {"www.gold.org", "gold.org"}:
-                candidates.append((year, month, url))
-    if not candidates:
-        return None
-    _, _, url = max(candidates)
-    article = fetch_page(url)
-    dates = extract_dates(article["text"])
-    article["date"] = max((d.isoformat() for d, _ in dates), default="not identified")
-    article["url"] = url
-    # Short, source-attributed excerpts only; no inferred numeric values.
-    article["excerpt"] = article["text"][:1100]
-    return article
+    for link in page["links"]:
+        target = link["url"].lower().split("?", 1)[0]
+        label = link["label"].lower()
+        if target.endswith(".xlsx") or ".xlsx/" in target or "xlsx" in target:
+            if any(word in label or word in target for word in keywords):
+                found.append(link)
+    # Keep distinct links in page order.
+    unique = []
+    seen = set()
+    for link in found:
+        if link["url"] not in seen:
+            seen.add(link["url"])
+            unique.append(link)
+    return unique
 
 
-def build_report(etf_page, reserves_page, etf_article=None, generated_at=None):
+def inspect_workbook(url):
+    try:
+        with request(url) as response:
+            final_url = response.geturl()
+            if urlparse(final_url).scheme != "https" or urlparse(final_url).hostname not in OFFICIAL_HOSTS:
+                raise ValueError("Workbook redirected away from official host")
+            raw = response.read(MAX_DOWNLOAD_BYTES + 1)
+            if len(raw) > MAX_DOWNLOAD_BYTES:
+                return {"url": url, "status": "too_large"}
+        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        sheets = []
+        for sheet in workbook.worksheets[:8]:
+            iterator = sheet.iter_rows(values_only=True)
+            headers = next(iterator, ())
+            sample = []
+            for row in iterator:
+                if any(value is not None for value in row):
+                    sample.append(row)
+                if len(sample) >= 3:
+                    break
+            sheets.append({
+                "name": sheet.title,
+                "max_row": sheet.max_row,
+                "max_column": sheet.max_column,
+                "headers": [str(v)[:100] if v is not None else "" for v in headers[:12]],
+                "sample_rows": [[str(v)[:100] if v is not None else "" for v in row[:12]] for row in sample],
+            })
+        workbook.close()
+        return {"url": url, "status": "parsed", "bytes": len(raw), "sheets": sheets}
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            return {"url": url, "status": f"access_restricted_http_{exc.code}"}
+        return {"url": url, "status": f"http_error_{exc.code}"}
+    except Exception as exc:
+        return {"url": url, "status": f"unavailable_{type(exc).__name__}"}
+
+
+def format_workbook(label, result):
+    lines = [f"- {label}: {result['url']}", f"  وضعیت دریافت/پردازش: {result['status']}"]
+    if result["status"] == "parsed":
+        lines.append(f"  حجم فایل: {result['bytes']} بایت")
+        for sheet in result["sheets"]:
+            lines.append(f"  برگه «{sheet['name']}»: حدود {sheet['max_row']} ردیف، {sheet['max_column']} ستون")
+            if sheet["headers"]:
+                lines.append("  سرستون‌ها: " + " | ".join(sheet["headers"]))
+            for row in sheet["sample_rows"]:
+                lines.append("  نمونه: " + " | ".join(row))
+    elif result["status"].startswith("access_restricted"):
+        lines.append("  فایل از این محیط بدون دسترسی مجاز قابل دریافت نیست؛ هیچ عددی از آن استخراج نشده است.")
+    else:
+        lines.append("  داده عددی استخراج نشد؛ دسترسی یا ساختار فایل نیازمند بررسی است.")
+    return lines
+
+
+def build_report(etf_page, reserves_page, etf_files, reserve_files, generated_at=None):
     generated_at = generated_at or datetime.now(timezone.utc)
-    today = generated_at.date()
     lines = [
-        "🟡 فاندبورد طلا | پایش داده‌های دوره‌ای شورای جهانی طلا",
-        f"زمان ساخت (UTC): {generated_at.isoformat()}",
-        "",
-        "این بخش مکمل گزارش تکنیکال و کلان است؛ داده‌های دوره‌ای را نباید داده روزانه تلقی کرد.",
+        "🟡 فاندبورد طلا | بررسی فایل‌های داده دوره‌ای شورای جهانی طلا",
+        f"زمان ساخت (UTC): {generated_at.astimezone(timezone.utc).isoformat()}",
+        "این گزارش بررسی فنی فایل‌هاست؛ ارقام نمونه یا سرستون‌ها به‌عنوان تغییرات قطعی بازار تفسیر نشده‌اند.",
         "",
         "📊 ETFهای طلای جهانی",
         f"صفحه رسمی: {etf_page['url']}",
         f"عنوان صفحه: {etf_page['title']}",
-        "بسامد اعلام‌شده توسط منبع: هفتگی/ماهانه؛ فایل‌های دانلودی اصلی معمولاً ماهانه هستند.",
+        "طبق روش انتشار منبع، داده‌های وب می‌توانند هفتگی و ماهانه باشند و فایل Excel معمولاً ماهانه منتشر می‌شود.",
     ]
-    if etf_article:
-        lines.extend([
-            f"آخرین مقاله ماهانه قابل شناسایی از لینک‌های صفحه: {etf_article['title']}",
-            f"لینک مقاله: {etf_article['url']}",
-            f"تاریخ استخراج‌شده از متن صفحه (نیازمند بررسی): {etf_article['date']}",
-            "خلاصه متن صفحه (برای جلوگیری از تحریف، به‌جای استخراج خودکار ارقام):",
-            etf_article["excerpt"],
-        ])
+    if etf_files:
+        for item in etf_files[:3]:
+            lines.extend(format_workbook("فایل داده ETF", item))
     else:
-        lines.append("مقاله ماهانه قابل شناسایی نبود؛ جهت جریان و ارقام گزارش نمی‌شود.")
+        lines.append("لینک فایل Excel از صفحه به‌صورت مطمئن شناسایی نشد؛ ارقام جریان سرمایه گزارش نمی‌شود.")
     lines.extend([
         "",
         "🏦 ذخایر طلای بانک‌های مرکزی",
         f"صفحه رسمی: {reserves_page['url']}",
         f"عنوان صفحه: {reserves_page['title']}",
-        "این منبع داده‌های ماهانه و فصلی را منتشر می‌کند و داده‌ها ممکن است با تأخیر گزارش شوند.",
+        "داده‌های ذخایر و تغییرات رسمی ممکن است ماهانه یا فصلی و با تأخیر منتشر شوند.",
     ])
-    dates = extract_dates(reserves_page["text"])
-    if dates:
-        lines.append("تاریخ‌های دیده‌شده در صفحه (صرفاً سرنخ متنی، نه تضمین تاریخ آخرین داده): " +
-                     ", ".join(raw for _, raw in dates[-4:]))
+    if reserve_files:
+        for item in reserve_files[:3]:
+            lines.extend(format_workbook("فایل داده ذخایر", item))
     else:
-        lines.append("تاریخ آخرین مشاهده/به‌روزرسانی از متن صفحه به‌طور مطمئن استخراج نشد.")
+        lines.append("لینک فایل Excel از صفحه به‌صورت مطمئن شناسایی نشد؛ تغییر خریدوفروش محاسبه نشده است.")
     lines.extend([
-        "تا وقتی فایل داده رسمی دریافت و ستون‌های تاریخ/مقدار اعتبارسنجی نشده‌اند، تغییر خرید بانک‌های مرکزی محاسبه یا حدس زده نمی‌شود.",
         "",
-        "محدودیت: این نسخه پایشگر صفحه و متن رسمی است، نه جایگزین فایل‌های داده XLSX یا روش‌شناسی شورای جهانی طلا.",
+        "مرحله بعدی پس از تأیید ساختار و دسترسی فایل‌ها: تعریف ستون‌های معتبر، تشخیص تاریخ مرجع، کنترل واحدها و محاسبه تغییرات فقط بین دوره‌های قابل مقایسه.",
         "⚠️ محتوای آموزشی و اطلاعاتی؛ نه توصیه خرید یا فروش.",
         "Dry-run only: no Telegram message was sent.",
     ])
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def main():
@@ -198,17 +204,16 @@ def main():
     except Exception as exc:
         warnings.append(f"Reserves page unavailable: {type(exc).__name__}: {exc}")
         reserves_page = {"url": RESERVES_PAGE, "title": "Unavailable", "text": "", "links": []}
-    article = None
-    if etf_page["text"]:
-        try:
-            article = find_latest_etf_article(etf_page)
-        except Exception as exc:
-            warnings.append(f"ETF article unavailable: {type(exc).__name__}: {exc}")
+
+    etf_links = find_xlsx_links(etf_page, ["etf", "flow", "holdings"]) if etf_page["text"] else []
+    reserve_links = find_xlsx_links(reserves_page, ["reserve", "gold", "change", "official"]) if reserves_page["text"] else []
+    etf_results = [inspect_workbook(link["url"]) for link in etf_links[:3]]
+    reserve_results = [inspect_workbook(link["url"]) for link in reserve_links[:3]]
     for warning in warnings:
         print("WARNING:", warning)
-    report = build_report(etf_page, reserves_page, article)
+    report = build_report(etf_page, reserves_page, etf_results, reserve_results)
     with open("gold_periodic_context_draft.txt", "w", encoding="utf-8") as output:
-        output.write(report + "\\n")
+        output.write(report + "\n")
     print(report)
 
 
