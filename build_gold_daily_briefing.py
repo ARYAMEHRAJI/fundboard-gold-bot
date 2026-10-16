@@ -4,6 +4,7 @@ from pathlib import Path
 
 TECHNICAL_FILE = Path("gold_technical_draft.txt")
 MACRO_FILE = Path("gold_macro_draft.txt")
+PERIODIC_FILE = Path("gold_periodic_context_draft.txt")
 OUTPUT_FILE = Path("gold_daily_briefing.txt")
 
 
@@ -52,7 +53,8 @@ def build_briefing(technical, macro, generated_at=None):
 def main():
     technical = read_required(TECHNICAL_FILE)
     macro = read_required(MACRO_FILE)
-    briefing = build_briefing(technical, macro)
+    periodic = read_required(PERIODIC_FILE)
+    briefing = build_briefing(technical, macro) + "\n\n━━━━━━━━━━━━\n📚 بخش سوم | داده‌های دوره‌ای شورای جهانی طلا\n\n" + periodic
     OUTPUT_FILE.write_text(briefing + "\n", encoding="utf-8")
     print(briefing)
 
