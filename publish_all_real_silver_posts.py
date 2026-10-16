@@ -1,4 +1,4 @@
-"""Publish the seven current, non-sample silver content categories once."""
+"""Publish the seven editorially cleaned Persian silver content categories once."""
 import os
 import subprocess
 import sys
