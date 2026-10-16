@@ -40,18 +40,26 @@ def prepare_message(text, generated_at=None):
         raise ValueError("Report file is empty")
     title = lines.pop(0).strip()
     body_lines = []
+    in_sources = False
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("Dry-run only:") or stripped.startswith("این خروجی پیش‌نویس ترکیبی است"):
+        if stripped.startswith("🔗 منابع") or stripped.startswith("منابع:") or stripped.startswith("Sources:"):
+            in_sources = True
             continue
-        if stripped.startswith("زمان ساخت (UTC):") or stripped.startswith("Generated at (UTC):"):
+        if in_sources:
+            continue
+        if stripped.startswith(("Dry-run only:", "این خروجی پیش‌نویس ترکیبی است",
+                                "زمان ساخت (UTC):", "Generated at (UTC):",
+                                "زمان تهیه گزارش", "🕒 زمان تهیه گزارش",
+                                "زمان انتشار:", "🕒 زمان انتشار:")):
+            continue
+        # Keep the analysis text clean: no source URLs or source-link lines in Telegram.
+        if "https://" in stripped or "http://" in stripped:
             continue
         body_lines.append(format_body_line(line))
     body = "\n".join(body_lines).strip()
-    iran_now = datetime.now(ZoneInfo("Asia/Tehran")).strftime("%Y-%m-%d %H:%M")
-    time_line = f"<i>🕒 زمان انتشار: {iran_now} به وقت ایران</i>"
     title_html = f"<b>{html.escape(title, quote=False)}</b>"
-    content = f"{title_html}\n{time_line}\n\n{body}\n\n{FOOTER}" if body else f"{title_html}\n{time_line}\n\n{FOOTER}"
+    content = f"{title_html}\n\n{body}\n\n{FOOTER}" if body else f"{title_html}\n\n{FOOTER}"
     if len(content) <= MAX_TELEGRAM_LENGTH:
         return content
 
