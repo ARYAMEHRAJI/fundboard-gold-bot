@@ -532,7 +532,7 @@ def build_messages(kind, items):
 
     lines.extend([
         "",
-        '<b><a href="https://t.me/FundBoard_Gold">فاندبورد طلا</a></b>',
+        '<b><a href="https://t.me/FundBoard_Gold">@FundBoard_Gold | فاندبورد طلا\n‎داشبورد</a></b> <b><a href="https://t.me/FundBoard_Gold">سرمایه‌گذاری شما</a></b>',
     ])
 
     messages = []
