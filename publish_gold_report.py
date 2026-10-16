@@ -107,7 +107,11 @@ def main():
     text = Path(args.file).read_text(encoding="utf-8")
     message = prepare_message(text)
     print(f"Prepared Telegram HTML message: {len(message)} characters")
-    # This publisher is deliberately publication-only; workflow schedules authorize it.
+    publish = os.environ.get("PUBLISH_TO_TELEGRAM", "false").strip().lower() == "true"
+    if not publish:
+        print("Dry run: Telegram message was NOT sent.")
+        print(message)
+        return
     send_message(message)
 
 
