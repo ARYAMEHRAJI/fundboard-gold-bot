@@ -1,0 +1,37 @@
+name: Publish real gold reports now
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "publish_real_reports_now.trigger"
+
+permissions:
+  contents: read
+
+jobs:
+  publish-real-reports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate and publish technical report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          PUBLISH_TO_TELEGRAM: "true"
+        run: |
+          python -u generate_gold_technical_report.py
+          python -u publish_gold_report.py --file gold_technical_draft.txt
+      - name: Generate and publish macro report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          PUBLISH_TO_TELEGRAM: "true"
+        run: |
+          python -u generate_gold_macro_report.py
+          python -u publish_gold_report.py --file gold_macro_draft.txt
