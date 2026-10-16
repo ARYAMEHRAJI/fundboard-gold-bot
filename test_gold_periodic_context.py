@@ -42,6 +42,11 @@ class PeriodicContextTests(unittest.TestCase):
         ]}
         self.assertTrue(periodic.find_latest_monthly_article(page).endswith("/2026/09"))
 
+    def test_monthly_article_probe_starts_with_current_month(self):
+        page = {"links": []}
+        url = periodic.find_latest_monthly_article(page, now=datetime(2026, 10, 16, tzinfo=timezone.utc))
+        self.assertEqual(url, "https://www.gold.org/goldhub/research/gold-etfs-holdings-and-flows/2026/10")
+
     def test_access_restricted_workbook_is_explicit(self):
         result = {"url": "https://www.gold.org/download/file/1/data.xlsx", "status": "access_restricted_http_403"}
         text = "\n".join(periodic.format_workbook("ETF", result))
