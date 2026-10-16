@@ -77,17 +77,17 @@ def run(command):
 
 def strip_markup(raw):
     raw = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", " ", raw)
-    raw = re.sub(r"(?i)<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\\n", raw)
+    raw = re.sub(r"(?i)<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\n", raw)
     raw = re.sub(r"<[^>]+>", " ", raw)
     raw = html.unescape(raw)
-    raw = re.sub(r"[ \\t]+", " ", raw)
-    raw = re.sub(r"\\n[ \\t]*\\n[ \\t]*\\n+", "\\n\\n", raw)
+    raw = re.sub(r"[ \t]+", " ", raw)
+    raw = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", raw)
     return raw.strip()
 
 def split(text):
     result = []
     while len(text) > MAX_LEN:
-        cut = text.rfind("\\n", 0, MAX_LEN)
+        cut = text.rfind("\n", 0, MAX_LEN)
         if cut < MAX_LEN // 2:
             cut = MAX_LEN
         result.append(text[:cut].strip())
@@ -123,7 +123,7 @@ def main():
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     for part_number, chunk in enumerate(split(body), 1):
         prefix = f"📊 {job['label']}" + (f" — بخش {part_number}" if len(split(body)) > 1 else "")
-        message = f"{prefix}\\n\\n{chunk}\\n\\n@FundBoard_Silver | فاندبورد نقره"
+        message = f"{prefix}\n\n{chunk}\n\n@FundBoard_Silver | فاندبورد نقره"
         response = requests.post(url, json={"chat_id": CHANNEL, "text": message,
                                             "disable_web_page_preview": True}, timeout=30)
         response.raise_for_status()
