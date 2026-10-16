@@ -1,4 +1,5 @@
 name: FundBoard Silver Full Parity - Dry Run
+# Updated: unit-test freshness check corrected
 
 on:
   push:
