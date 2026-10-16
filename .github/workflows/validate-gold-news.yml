@@ -38,6 +38,8 @@ jobs:
         run: python -u generate_gold_macro_report.py
 
       - name: Generate official periodic gold context draft
+        env:
+          WGC_GOLDHUB_COOKIE: ${{ secrets.WGC_GOLDHUB_COOKIE }}
         run: python -u generate_gold_periodic_context.py
 
       - name: Build combined daily briefing draft
