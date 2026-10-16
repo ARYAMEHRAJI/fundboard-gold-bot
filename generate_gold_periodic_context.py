@@ -115,7 +115,7 @@ def find_latest_monthly_article(page):
 def extract_public_facts(page):
     """Extract clearly attributed public article highlights; never infer values."""
     text = page.get("text", "")
-    published = re.search(r"Published:\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})", text, re.I)
+    published = re.search(r"Published:\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]+,?\s+\d{4})", text, re.I)
     highlights = ""
     match = re.search(r"Highlights\s+(.*?)(?:\s+Chart\s+\d+:|\s+Downloads:|\s+May in review|\s+September in review|\s+August in review)", text, re.I)
     if match:
