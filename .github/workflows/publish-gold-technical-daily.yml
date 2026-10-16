@@ -13,7 +13,8 @@ on:
         default: false
   schedule:
     # GitHub Actions cron uses UTC; Iran is UTC+03:30 year-round.
-    # Tehran 10:00 local time\n    - cron: "30 6 * * *"
+    # Tehran 10:00 local time
+    - cron: "30 6 * * *"
 
 permissions:
   contents: read
