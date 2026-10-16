@@ -41,10 +41,10 @@ class GoldMacroReportTests(unittest.TestCase):
 
     def test_macro_draft_labels_missing_data_and_source_limits(self):
         report = build_macro_snapshot({}, [], generated_at=datetime(2026, 10, 10, tzinfo=timezone.utc))
-        self.assertIn("unavailable", report)
-        self.assertIn("not the DXY index", report)
-        self.assertIn("not daily series", report)
-        self.assertIn("No recent eligible releases", report)
+        self.assertIn("در دسترس نیست", report)
+        self.assertIn("با DXY تفاوت دارد", report)
+        self.assertIn("داده روزانه نیستند", report)
+        self.assertIn("اطلاعیه واجد شرایطی دریافت نشد", report)
 
 if __name__ == "__main__":
     unittest.main()
