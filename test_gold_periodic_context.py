@@ -1,4 +1,6 @@
+import os
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 import generate_gold_periodic_context as periodic
 
@@ -46,6 +48,20 @@ class PeriodicContextTests(unittest.TestCase):
         page = {"links": []}
         url = periodic.find_latest_monthly_article(page, now=datetime(2026, 10, 16, tzinfo=timezone.utc))
         self.assertEqual(url, "https://www.gold.org/goldhub/research/gold-etfs-holdings-and-flows/2026/10")
+
+    def test_optional_authorized_cookie_is_passed_only_to_official_host(self):
+        class DummyResponse:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+        with patch.dict(os.environ, {"WGC_GOLDHUB_COOKIE": "session=secret"}):
+            with patch.object(periodic.urllib.request, "urlopen", return_value=DummyResponse()) as mocked:
+                with periodic.request("https://www.gold.org/download/file/1/data.xlsx"):
+                    pass
+        req = mocked.call_args.args[0]
+        self.assertEqual(req.get_header("Cookie"), "session=secret")
+        with patch.dict(os.environ, {"WGC_GOLDHUB_COOKIE": "session=secret"}):
+            with self.assertRaises(ValueError):
+                periodic.request("https://example.com/data.xlsx")
 
     def test_access_restricted_workbook_is_explicit(self):
         result = {"url": "https://www.gold.org/download/file/1/data.xlsx", "status": "access_restricted_http_403"}
