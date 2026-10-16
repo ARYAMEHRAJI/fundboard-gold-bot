@@ -1,0 +1,60 @@
+name: FundBoard Silver Scheduled Publications
+
+on:
+  schedule:
+    # All times are Iran time (UTC+03:30); cron expressions below are UTC.
+    # 10:00 Tehran — technical analysis
+    - cron: "30 6 * * *"
+    # 12:30 Tehran — global performance (Monday only)
+    - cron: "0 9 * * 1"
+    # 13:00 Tehran — news monitoring and analysis
+    - cron: "30 9 * * *"
+    # 16:00 Tehran — gold/silver comparison
+    - cron: "30 12 * * *"
+    # 18:00 Tehran — macro/fundamental analysis
+    - cron: "30 14 * * *"
+    # 20:00 Tehran — specialist education
+    - cron: "30 16 * * *"
+    # 21:00 Tehran — daily briefing
+    - cron: "30 17 * * *"
+  workflow_dispatch:
+    inputs:
+      content_type:
+        description: "Which single post type should be published"
+        required: true
+        type: choice
+        options:
+          - technical
+          - news
+          - periodic
+          - comparison
+          - macro
+          - education
+          - briefing
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fundboard-silver-scheduled-publications
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
+      TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
+      SCHEDULE_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.content_type || (github.event.schedule == '30 6 * * *' && 'technical') || (github.event.schedule == '0 9 * * 1' && 'periodic') || (github.event.schedule == '30 9 * * *' && 'news') || (github.event.schedule == '30 12 * * *' && 'comparison') || (github.event.schedule == '30 14 * * *' && 'macro') || (github.event.schedule == '30 16 * * *' && 'education') || (github.event.schedule == '30 17 * * *' && 'briefing') }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install requests beautifulsoup4 openpyxl
+      - name: Generate and publish the scheduled post
+        run: python publish_silver_scheduled_content.py
