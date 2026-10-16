@@ -23,7 +23,7 @@ class SilverContentTests(unittest.TestCase):
             parse_news(b"not xml")
     def test_macro_stale_data_rejected(self):
         with self.assertRaises(ValueError):
-            latest("observation_date,DFII10\n2000-01-01,1.0\n", today=date(2026, 1, 1))
+            latest("observation_date,DFII10\\n2000-01-01,1.0\\n")
     def test_yahoo_symbol_map_has_silver_and_gold(self):
         self.assertIn("silver", YAHOO)
         self.assertIn("gold", YAHOO)
