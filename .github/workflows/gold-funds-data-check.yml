@@ -21,18 +21,45 @@ jobs:
           python-version: "3.12"
 
       - name: Fetch and inspect fund data
+        id: inspect
+        continue-on-error: true
         run: python -u analyze_iran_gold_funds.py
 
-      - name: Display diagnostic
+      - name: Display diagnostic report
+        if: always()
+        shell: bash
         run: |
-          cat gold_funds_diagnostic.txt
+          if [ -f gold_funds_diagnostic.txt ]; then
+            cat gold_funds_diagnostic.txt
+          else
+            echo "Diagnostic report was not created."
+          fi
+
+      - name: Display error details
+        if: always()
+        shell: bash
+        run: |
+          if [ -f gold_funds_error.txt ]; then
+            echo "===== ERROR DETAILS ====="
+            cat gold_funds_error.txt
+          else
+            echo "No error file was created."
+          fi
 
       - name: Upload diagnostic files
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gold-funds-data-check
+          name: gold-funds-debug
           path: |
             gold_funds_raw.json
             gold_funds_diagnostic.txt
-          if-no-files-found: error
+            gold_funds_error.txt
+          if-no-files-found: warn
           retention-days: 7
+
+      - name: Fail if data inspection failed
+        if: steps.inspect.outcome == 'failure'
+        run: |
+          echo "Data inspection failed. Review the logs and artifact."
+          exit 1
