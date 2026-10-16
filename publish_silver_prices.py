@@ -132,7 +132,7 @@ def main():
     post = build_post(items)
     preview = Path("silver_content_preview/silver_prices.html")
     preview.parent.mkdir(parents=True, exist_ok=True)
-    preview.write_text(post + "\\n", encoding="utf-8")
+    preview.write_text(post + "\n", encoding="utf-8")
     print(f"PRICE_PREVIEW_FILE: {preview}")
     print(post)
     if publish:
