@@ -1,0 +1,26 @@
+name: Publish All Real FundBoard Silver Posts
+on:
+  push:
+    branches: [main]
+    paths: ["publish_all_real_silver_posts.py", ".github/workflows/publish-all-real-silver-posts.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: fundboard-silver-publish-all-now
+  cancel-in-progress: false
+jobs:
+  publish-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
+      TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install requests beautifulsoup4 openpyxl
+      - name: Publish each real content category
+        run: python publish_all_real_silver_posts.py
