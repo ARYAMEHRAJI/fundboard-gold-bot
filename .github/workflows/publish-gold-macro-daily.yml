@@ -1,6 +1,9 @@
 name: Publish Gold Macro Context - Tehran 18:00
 
 on:
+  push:
+    branches:
+      - "feature/gold-news-validation"
   workflow_dispatch:
     inputs:
       publish_now:
