@@ -1,0 +1,29 @@
+name: Validate Gold News Logic
+
+on:
+  push:
+    branches:
+      - "feature/gold-news-validation"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile gold news scripts
+        run: python -m py_compile analyze_gold_news.py publish_gold_news.py
+
+      - name: Run offline gold news tests
+        run: python -m unittest -v test_gold_news_logic.py
