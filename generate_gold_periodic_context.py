@@ -87,6 +87,9 @@ def find_xlsx_links(page, keywords):
     for link in page["links"]:
         target = link["url"].lower().split("?", 1)[0]
         label = link["label"].lower()
+        parsed = urlparse(link["url"])
+        if parsed.scheme != "https" or parsed.hostname not in OFFICIAL_HOSTS:
+            continue
         if target.endswith(".xlsx") or ".xlsx/" in target or "xlsx" in target or "xlsx" in label:
             if any(word in label or word in target for word in keywords):
                 found.append(link)
