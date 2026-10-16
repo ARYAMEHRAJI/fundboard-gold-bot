@@ -21,9 +21,24 @@ jobs:
           python-version: "3.12"
 
       - name: Generate educational post
-        run: python gold_specialist_posts.py
+        run: python -u gold_specialist_posts.py
 
-      - name: Upload draft for review
+      - name: Verify and display draft
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking output file..."
+
+          test -s gold_specialist_draft.html
+
+          echo "Output file exists."
+          echo "----- POST PREVIEW START -----"
+          cat gold_specialist_draft.html
+          echo
+          echo "----- POST PREVIEW END -----"
+
+      - name: Upload draft
         uses: actions/upload-artifact@v4
         with:
           name: gold-specialist-draft
