@@ -9,6 +9,11 @@ on:
       - "generate_silver_technical_report.py"
       - "generate_silver_gold_comparison.py"
       - "build_silver_daily_briefing.py"
+      - "analyze_silver_news.py"
+      - "generate_silver_periodic_report.py"
+      - "generate_silver_macro_report.py"
+      - "silver_specialist_posts.py"
+      - "analyze_iran_silver_funds.py"
       - ".github/workflows/test-silver-content-suite.yml"
   workflow_dispatch:
 
@@ -18,7 +23,7 @@ permissions:
 jobs:
   dry-run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,12 +35,28 @@ jobs:
         run: pip install requests beautifulsoup4
       - name: Run silver price scraper (dry-run only)
         env:
-          TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
           TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
           PUBLISH_TO_TELEGRAM: "false"
         run: python publish_silver_prices.py
+      - name: Run silver technical report (dry-run only)
+        env:
+          PUBLISH_TO_TELEGRAM: "false"
+        run: python generate_silver_technical_report.py
       - name: Run silver content suite (dry-run only)
         run: python silver_content_suite.py
+      - name: Run global silver returns and ETF report (dry-run only)
+        run: python generate_silver_periodic_report.py
+      - name: Run silver macro and fundamental report (dry-run only)
+        run: python generate_silver_macro_report.py
+      - name: Run AI-assisted silver news analysis (dry-run only)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python analyze_silver_news.py
+      - name: Generate specialist post (dry-run only)
+        run: python silver_specialist_posts.py
+      - name: Diagnose Iranian silver-fund source (dry-run only)
+        run: python analyze_iran_silver_funds.py
       - name: Run silver-gold comparison report (dry-run only)
         run: python generate_silver_gold_comparison.py
       - name: Build combined daily briefing (dry-run only)
@@ -48,5 +69,6 @@ jobs:
           path: |
             silver_content_preview/
             silver_gold_comparison_preview.html
+            silver_technical_report.txt
           if-no-files-found: warn
           retention-days: 7
