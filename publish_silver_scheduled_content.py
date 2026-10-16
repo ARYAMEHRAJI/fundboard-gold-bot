@@ -103,14 +103,19 @@ def main():
         raise RuntimeError("Missing TELEGRAM_SILVER_BOT_TOKEN secret")
     job = JOBS[SCHEDULE]
     OUT.mkdir(parents=True, exist_ok=True)
+    command_outputs = []
     for command in job["commands"]:
-        run(command)
+        command_outputs.append(run(command))
     file_path = Path(job["file"])
     if not file_path.is_absolute():
         file_path = OUT / file_path if not job["file"].startswith("../") else Path("silver_gold_comparison_preview.html")
-    if not file_path.exists() or file_path.stat().st_size == 0:
-        raise RuntimeError(f"Expected generated output is missing: {file_path}")
-    body = strip_markup(file_path.read_text(encoding="utf-8", errors="replace"))
+    if file_path.exists() and file_path.stat().st_size > 0:
+        body = strip_markup(file_path.read_text(encoding="utf-8", errors="replace"))
+    else:
+        # Some generators intentionally print their report to stdout instead of writing a file.
+        body = strip_markup(command_outputs[-1] if command_outputs else "")
+    if not body:
+        raise RuntimeError(f"Expected generated output is missing or empty: {file_path}")
     # Do not allow the retired Iranian silver-fund diagnostic into scheduled posts.
     body = re.sub(r"(?is).*?تشخیص منبع صندوق‌های نقره ایران.*?(?=━━━━━━━━━━━━━━━━|$)", "", body).strip()
     if not body:
