@@ -107,6 +107,10 @@ def polish_body(body, schedule):
             continue
         if "حالت آزمایشی:" in line or "پیامی ارسال نشد" in line:
             continue
+        if line.startswith("@FundBoard_Silver") or line.startswith("فاندبورد نقره |"):
+            continue
+        if line.startswith("این گزارش صرفاً") or line.startswith("این گزارش توصیفی") or line.startswith("این گزارش زمینه تحلیلی"):
+            continue
         line = line.replace("iShares Silver Trust", "صندوق نقره")
         line = line.replace("abrdn Physical Silver Shares ETF", "صندوق نقره")
         line = line.replace("Sprott Physical Silver Trust", "تراست نقره فیزیکی")
