@@ -116,15 +116,17 @@ def polish_body(body, schedule):
         line = line.replace("USD", "دلار")
         line = line.replace("SMA", "میانگین متحرک")
         line = line.replace("RSI", "شاخص قدرت نسبی")
-        if re.fullmatch(r"[A-Za-z0-9_./:=?&%+ -]{8,}", line):
+        if all(ord(ch) < 128 for ch in line) and len(line) >= 8:
             continue
         cleaned.append(line)
-    body = "\\n".join(cleaned).strip()
-    body = re.sub(r"\\n{3,}", "\\n\\n", body)
-    meaningful = [line for line in body.splitlines() if re.search(r"[\\u0600-\\u06FF]", line)]
+    body = chr(10).join(cleaned).strip()
+    while chr(10) + chr(10) + chr(10) in body:
+        body = body.replace(chr(10) + chr(10) + chr(10), chr(10) + chr(10))
+    meaningful = [line for line in body.splitlines() if any(0x0600 <= ord(ch) <= 0x06FF for ch in line)]
     if len(meaningful) < 3:
         raise RuntimeError("پس از بازبینی، متن فارسی کافی برای انتشار باقی نماند.")
     return body
+
 
 def split(text):
     result = []
