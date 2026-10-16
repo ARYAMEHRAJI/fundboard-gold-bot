@@ -26,7 +26,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install requests
+        run: pip install requests beautifulsoup4
+      - name: Run silver price scraper (dry-run only)
+        env:
+          TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
+          TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
+          PUBLISH_TO_TELEGRAM: "false"
+        run: python publish_silver_prices.py
       - name: Run silver content suite (dry-run only)
         run: python silver_content_suite.py
       - name: Run silver-gold comparison report (dry-run only)
