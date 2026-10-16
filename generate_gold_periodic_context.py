@@ -93,19 +93,24 @@ def extract_dates(text):
         except ValueError:
             pass
         month = months.get(cleaned.lower())
-        if month and index + 1 < len(tokens):
-            day = 1
-            year_token_index = index + 1
+        if month:
             try:
-                possible_day = int(tokens[index + 1])
-                if 1 <= possible_day <= 31 and index + 2 < len(tokens):
-                    day = possible_day
-                    year_token_index = index + 2
-                year = int(tokens[year_token_index])
-                value = datetime(year, month, day).date()
-                raw = " ".join(tokens[index:year_token_index + 1])
-                found.append((value, raw))
-            except (ValueError, TypeError):
+                if index > 0 and tokens[index - 1].isdigit() and int(tokens[index - 1]) <= 31:
+                    day = int(tokens[index - 1])
+                    year = int(tokens[index + 1])
+                    raw = " ".join(tokens[index - 1:index + 2])
+                elif index + 1 < len(tokens):
+                    day = 1
+                    year_index = index + 1
+                    if tokens[index + 1].isdigit() and int(tokens[index + 1]) <= 31 and index + 2 < len(tokens):
+                        day = int(tokens[index + 1])
+                        year_index = index + 2
+                    year = int(tokens[year_index])
+                    raw = " ".join(tokens[index:year_index + 1])
+                else:
+                    continue
+                found.append((datetime(year, month, day).date(), raw))
+            except (ValueError, TypeError, IndexError):
                 continue
     return sorted(set(found))
 
