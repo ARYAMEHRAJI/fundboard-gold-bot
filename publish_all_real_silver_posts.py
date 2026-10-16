@@ -15,6 +15,10 @@ CATEGORIES = [
 ]
 
 def main():
+    # Safety interlock: do not bulk-publish automatically while editorial/data validation is under repair.
+    if os.getenv("ALLOW_UNREVIEWED_SILVER_PUBLICATION", "").strip().lower() != "true":
+        print("PUBLICATION_PAUSED: editorial review and data-quality gates are required before any bulk send.")
+        return
     outcomes = []
     for key, label in CATEGORIES:
         env = os.environ.copy()
