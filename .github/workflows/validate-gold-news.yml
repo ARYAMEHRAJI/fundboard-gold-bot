@@ -26,10 +26,10 @@ jobs:
         run: python -m pip install openpyxl==3.1.5
 
       - name: Compile analysis scripts
-        run: python -m py_compile analyze_gold_news.py publish_gold_news.py generate_gold_technical_report.py generate_gold_macro_report.py generate_gold_periodic_context.py build_gold_daily_briefing.py
+        run: python -m py_compile analyze_gold_news.py publish_gold_news.py generate_gold_technical_report.py generate_gold_macro_report.py generate_gold_periodic_context.py build_gold_daily_briefing.py publish_gold_report.py
 
       - name: Run offline tests
-        run: python -m unittest -v test_gold_news_logic.py test_gold_technical_report.py test_gold_macro_report.py test_gold_periodic_context.py test_gold_daily_briefing.py
+        run: python -m unittest -v test_gold_news_logic.py test_gold_technical_report.py test_gold_macro_report.py test_gold_periodic_context.py test_gold_daily_briefing.py test_publish_gold_report.py
 
       - name: Generate technical draft from live source data
         run: python -u generate_gold_technical_report.py
