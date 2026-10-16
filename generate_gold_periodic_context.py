@@ -1,5 +1,6 @@
 """Inspect official World Gold Council periodic XLSX downloads; dry-run only."""
 import io
+import os
 import re
 import urllib.error
 import urllib.request
@@ -55,7 +56,13 @@ def request(url):
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in OFFICIAL_HOSTS:
         raise ValueError("Blocked non-official or non-HTTPS source URL")
-    req = urllib.request.Request(url, headers={"User-Agent": "FundBoardGoldBot/1.0 (research draft)"})
+    headers = {"User-Agent": "FundBoardGoldBot/1.0 (research draft)"}
+    # Optional authorized Goldhub session cookie. Store it only as a GitHub Actions
+    # secret; never print, persist, or commit it. Public-page requests work without it.
+    cookie = os.environ.get("WGC_GOLDHUB_COOKIE", "").strip()
+    if cookie:
+        headers["Cookie"] = cookie
+    req = urllib.request.Request(url, headers=headers)
     return urllib.request.urlopen(req, timeout=TIMEOUT)
 
 
@@ -240,7 +247,8 @@ def build_report(etf_page, reserves_page, etf_files, reserve_files, generated_at
         lines.append("لینک فایل Excel از صفحه به‌صورت مطمئن شناسایی نشد؛ تغییر خریدوفروش محاسبه نشده است.")
     lines.extend([
         "",
-        "فایل‌های Excel رسمی در این اجرا با خطای دسترسی 403 مواجه شدند؛ بنابراین هیچ سری عددی از فایل‌ها استخراج یا بازسازی نشده است.",
+        "اگر فایل Excel با 403 مواجه شد، می‌توان با دسترسی مجاز کاربر از متغیر محیطی WGC_GOLDHUB_COOKIE استفاده کرد؛ مقدار آن هرگز در گزارش چاپ نمی‌شود.",
+        "در صورت نبود دسترسی مجاز به فایل خام، هیچ سری عددی از آن استخراج یا بازسازی نمی‌شود."
         "گزارش ماهانه عمومی، در صورت دسترسی، به‌عنوان خلاصه منبعی جداگانه درج می‌شود و جایگزین داده خام Excel نیست.",
         "⚠️ محتوای آموزشی و اطلاعاتی؛ نه توصیه خرید یا فروش.",
         "Dry-run only: no Telegram message was sent.",
