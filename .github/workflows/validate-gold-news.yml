@@ -23,16 +23,38 @@ jobs:
           python-version: "3.12"
 
       - name: Compile analysis scripts
-        run: python -m py_compile analyze_gold_news.py publish_gold_news.py generate_gold_technical_report.py generate_gold_macro_report.py
+        run: python -m py_compile analyze_gold_news.py publish_gold_news.py generate_gold_technical_report.py generate_gold_macro_report.py generate_gold_periodic_context.py build_gold_daily_briefing.py
 
       - name: Run offline tests
-        run: python -m unittest -v test_gold_news_logic.py test_gold_technical_report.py test_gold_macro_report.py
+        run: python -m unittest -v test_gold_news_logic.py test_gold_technical_report.py test_gold_macro_report.py test_gold_periodic_context.py test_gold_daily_briefing.py
 
       - name: Generate technical draft from live source data
         run: python -u generate_gold_technical_report.py
 
       - name: Generate macro context draft from dated sources
         run: python -u generate_gold_macro_report.py
+
+      - name: Generate official periodic gold context draft
+        run: python -u generate_gold_periodic_context.py
+
+      - name: Build combined daily briefing draft
+        run: python -u build_gold_daily_briefing.py
+
+      - name: Upload combined daily briefing
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-daily-briefing
+          path: gold_daily_briefing.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload periodic context draft
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-periodic-context
+          path: gold_periodic_context_draft.txt
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload technical draft
         uses: actions/upload-artifact@v4
