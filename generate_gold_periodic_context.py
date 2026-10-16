@@ -71,37 +71,57 @@ def fetch_page(url):
     return {
         "url": final_url,
         "title": " ".join(parser.title).strip() or final_url,
-        "text": re.sub(r"\\s+", " ", " ".join(parser.text)).strip(),
+        "text": " ".join(" ".join(parser.text).split()),
         "links": [(urljoin(final_url, href), label) for href, label in parser.links],
     }
 
 
 def extract_dates(text):
     found = []
-    patterns = [
-        r"\\b(?:[0-3]?\\d\\s+)?(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+20\\d{2}\\b",
-        r"\\b20\\d{2}-\\d{2}-\\d{2}\\b",
-    ]
-    for pattern in patterns:
-        for match in re.finditer(pattern, text, re.I):
-            raw = match.group(0)
-            for fmt in ("%d %B %Y", "%B %Y", "%Y-%m-%d"):
-                try:
-                    value = datetime.strptime(raw, fmt).date()
-                    found.append((value, raw))
-                    break
-                except ValueError:
-                    continue
+    months = {
+        "january": 1, "february": 2, "march": 3, "april": 4,
+        "may": 5, "june": 6, "july": 7, "august": 8,
+        "september": 9, "october": 10, "november": 11, "december": 12,
+    }
+    tokens = text.replace(",", " ").replace(".", " ").split()
+    for index, token in enumerate(tokens):
+        cleaned = token.strip()
+        try:
+            if len(cleaned) == 10 and cleaned[4] == "-" and cleaned[7] == "-":
+                found.append((datetime.strptime(cleaned, "%Y-%m-%d").date(), cleaned))
+                continue
+        except ValueError:
+            pass
+        month = months.get(cleaned.lower())
+        if month and index + 1 < len(tokens):
+            day = 1
+            year_token_index = index + 1
+            try:
+                possible_day = int(tokens[index + 1])
+                if 1 <= possible_day <= 31 and index + 2 < len(tokens):
+                    day = possible_day
+                    year_token_index = index + 2
+                year = int(tokens[year_token_index])
+                value = datetime(year, month, day).date()
+                raw = " ".join(tokens[index:year_token_index + 1])
+                found.append((value, raw))
+            except (ValueError, TypeError):
+                continue
     return sorted(set(found))
-
 
 def find_latest_etf_article(page):
     candidates = []
     for url, label in page["links"]:
         path = urlparse(url).path.rstrip("/")
-        match = re.search(r"/goldhub/research/gold-etfs-(?:holdings-and-flows|holdings-flows)/(20\\d{2})/(0?[1-9]|1[0-2])$", path)
-        if match and urlparse(url).hostname in {"www.gold.org", "gold.org"}:
-            candidates.append((int(match.group(1)), int(match.group(2)), url))
+        parts = path.split("/")
+        if len(parts) >= 5 and parts[-4] == "gold-etfs-holdings-and-flows" and parts[-3].isdigit() and parts[-2].isdigit():
+            year, month = int(parts[-3]), int(parts[-2])
+            if 1 <= month <= 12 and urlparse(url).hostname in {"www.gold.org", "gold.org"}:
+                candidates.append((year, month, url))
+        elif len(parts) >= 5 and parts[-4] == "gold-etfs-holdings-flows" and parts[-3].isdigit() and parts[-2].isdigit():
+            year, month = int(parts[-3]), int(parts[-2])
+            if 1 <= month <= 12 and urlparse(url).hostname in {"www.gold.org", "gold.org"}:
+                candidates.append((year, month, url))
     if not candidates:
         return None
     _, _, url = max(candidates)
