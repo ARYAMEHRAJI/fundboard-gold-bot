@@ -1,0 +1,22 @@
+name: Publish Real Silver Market Update Now
+on:
+  push:
+    branches: [main]
+    paths: ["publish_real_silver_update_now.py"]
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install requests beautifulsoup4
+      - name: Publish current market update (real post)
+        env:
+          TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
+          TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
+        run: python publish_real_silver_update_now.py
