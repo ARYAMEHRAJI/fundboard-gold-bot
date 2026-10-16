@@ -8,8 +8,6 @@ on:
         required: true
         type: boolean
         default: false
-  schedule:
-    - cron: "20 15 * * 1-5"
 
 permissions:
   contents: read
@@ -35,5 +33,5 @@ jobs:
         env:
           TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
           TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
-          PUBLISH_TO_TELEGRAM: ${{ github.event_name == 'schedule' || inputs.publish_now }}
+          PUBLISH_TO_TELEGRAM: "false"
         run: python generate_silver_technical_report.py
