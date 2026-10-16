@@ -132,38 +132,63 @@ def fetch_news():
 
 
 def select_relevant_news(articles):
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=36)
+    """Keep only recent, dated articles with valid web links.
+
+    Missing or unparseable publication dates are rejected rather than treated
+    as fresh. Publisher diversity is prioritized before filling remaining slots.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=36)
     filtered = []
     seen_links = set()
     seen_titles = set()
 
     for article in articles:
         published = article.get("published")
-
-        if published and published < cutoff:
+        if not isinstance(published, datetime):
             continue
 
-        link = article.get("link", "").strip()
-        title_key = re.sub(
-            r"[^a-z0-9]+", "",
-            article.get("title", "").lower()
-        )
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        else:
+            published = published.astimezone(timezone.utc)
 
-        if not link or link in seen_links or title_key in seen_titles:
+        # Reject stale items and implausible future timestamps.
+        if published < cutoff or published > now + timedelta(minutes=10):
             continue
+
+        link = str(article.get("link", "")).strip()
+        parsed_link = urllib.parse.urlparse(link)
+        if parsed_link.scheme not in ("http", "https") or not parsed_link.netloc:
+            continue
+
+        title = clean_text(article.get("title", ""))
+        title_key = re.sub(r"[^a-z0-9]+", "", title.lower())
+        if not title or not title_key or link in seen_links or title_key in seen_titles:
+            continue
+
+        source = clean_text(article.get("source", ""))
+        if not source or source.lower() in {"unknown", "unknown source", "n/a"}:
+            source = parsed_link.hostname or "Unknown source"
+
+        normalized = dict(article)
+        normalized["title"] = title
+        normalized["link"] = link
+        normalized["published"] = published
+        normalized["source"] = source
 
         seen_links.add(link)
         seen_titles.add(title_key)
-        filtered.append(article)
+        filtered.append(normalized)
 
-    # Prioritize different publishers to reduce duplicate coverage.
+    # Prioritize distinct publishers to reduce duplicate coverage.
     selected = []
     selected_links = set()
     selected_sources = set()
 
     for article in filtered:
-        source = article.get("source", "Unknown source").lower()
-        if source not in selected_sources:
+        source = article.get("source", "Unknown source").strip().lower()
+        if source and source != "unknown source" and source not in selected_sources:
             selected.append(article)
             selected_sources.add(source)
             selected_links.add(article["link"])
@@ -180,12 +205,11 @@ def select_relevant_news(articles):
             if len(selected) >= MAX_ARTICLES_FOR_ANALYSIS:
                 break
 
-    print(f"Relevant articles: {len(filtered)}")
+    print(f"Relevant articles after freshness/link checks: {len(filtered)}")
     print(f"Selected articles: {len(selected)}")
-    print(f"Distinct sources: {len(set(a.get('source', '') for a in selected))}")
+    print(f"Distinct sources: {len(set(a.get('source', '').strip().lower() for a in selected if a.get('source')))}")
 
     return selected
-
 
 def build_prompt(articles):
     news_items = []
