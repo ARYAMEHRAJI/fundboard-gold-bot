@@ -1,7 +1,7 @@
 import unittest
 from datetime import date, timedelta
 
-from generate_gold_technical_report import calculate_metrics, clean_closes, rsi
+from generate_gold_technical_report import (\n    build_scenarios, calculate_metrics, clean_closes, find_support_resistance, rsi,\n)
 
 
 def sample_points(count=60, start=100.0, step=1.0):
@@ -20,6 +20,31 @@ class GoldTechnicalMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["sma20"], sum(range(140, 160)) / 20)
         self.assertAlmostEqual(metrics["sma50"], sum(range(110, 160)) / 50)
         self.assertEqual(metrics["trend"], "bullish")
+
+
+    def test_finds_close_based_support_and_resistance(self):
+        closes = [
+            100, 102, 105, 103, 100, 98, 101, 104, 106, 103,
+            100, 97, 99, 102, 105, 108, 104, 101, 98, 95,
+            98, 102, 106, 110, 107, 103, 99, 96, 100, 105,
+            109, 112, 108, 104, 100, 97, 101, 106, 111, 115,
+            110, 105, 100, 96, 99, 104, 109, 113, 107, 102,
+            98, 95, 99, 104, 108, 112, 106, 101, 97, 94, 99,
+        ]
+        levels = find_support_resistance(closes)
+        self.assertIsNotNone(levels["support"])
+        self.assertIsNotNone(levels["resistance"])
+        self.assertLess(levels["support"], closes[-1])
+        self.assertGreater(levels["resistance"], closes[-1])
+
+    def test_scenarios_have_confirmation_and_invalidation(self):
+        metrics = calculate_metrics(sample_points(), 160.0)
+        scenarios = build_scenarios(metrics)
+        self.assertIn("bullish_confirmation", scenarios)
+        self.assertIn("bullish_invalidation", scenarios)
+        self.assertIn("bearish_confirmation", scenarios)
+        self.assertIn("bearish_invalidation", scenarios)
+        self.assertIn("روزانه", scenarios["bullish_confirmation"])
 
     def test_rejects_insufficient_history(self):
         with self.assertRaises(ValueError):
