@@ -13,7 +13,7 @@ on:
       - "generate_silver_gold_comparison.py"
       - "silver_specialist_posts.py"
       - "build_silver_daily_briefing.py"
-      - "tests/test_silver_content.py"
+      - "test_silver_content.py"
       - ".github/workflows/silver-full-parity-dry-run.yml"
   workflow_dispatch:
 
@@ -41,7 +41,7 @@ jobs:
       - name: Compile every silver module
         run: python -m compileall -q publish_silver_prices.py generate_silver_technical_report.py silver_content_suite.py analyze_silver_news.py generate_silver_macro_report.py generate_silver_periodic_report.py generate_silver_gold_comparison.py silver_specialist_posts.py build_silver_daily_briefing.py analyze_iran_silver_funds.py
       - name: Unit tests for silver analysis
-        run: python -m unittest discover -s tests -p 'test_silver_content.py' -v
+        run: python test_silver_content.py
       - name: Generate physical silver and currency prices preview
         run: python publish_silver_prices.py
       - name: Generate technical analysis preview
