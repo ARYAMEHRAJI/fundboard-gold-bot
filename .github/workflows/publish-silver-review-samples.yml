@@ -1,0 +1,30 @@
+name: Publish Silver Review Samples to Telegram
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "publish_silver_review_samples.py"
+
+permissions:
+  contents: read
+
+jobs:
+  publish-samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PUBLISH_TO_TELEGRAM: "false"
+      TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
+      TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install requests beautifulsoup4 openpyxl
+      - name: Generate and publish clearly labeled review samples
+        run: python publish_silver_review_samples.py
