@@ -1,0 +1,38 @@
+
+name: Gold Funds Data Check - Dry Run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-funds:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch and inspect fund data
+        run: python -u analyze_iran_gold_funds.py
+
+      - name: Display diagnostic
+        run: |
+          cat gold_funds_diagnostic.txt
+
+      - name: Upload diagnostic files
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-funds-data-check
+          path: |
+            gold_funds_raw.json
+            gold_funds_diagnostic.txt
+          if-no-files-found: error
+          retention-days: 7
