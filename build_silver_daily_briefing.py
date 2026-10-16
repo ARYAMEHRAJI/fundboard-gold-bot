@@ -14,7 +14,6 @@ SECTIONS=[
  ("تحلیل اخبار جهانی","news_analysis.html"),
  ("پایش خبرهای تازه","news_monitor.html"),
  ("آموزش و تحلیل تخصصی","specialist_post.html"),
- ("تشخیص منبع صندوق‌های نقره ایران","iran_silver_funds_diagnostic.json"),
  ("زمینه گزارش دوره‌ای","periodic_context.html"),
 ]
 def main():
