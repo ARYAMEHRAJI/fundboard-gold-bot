@@ -1,6 +1,13 @@
 name: Publish Gold Technical Report - Tehran 10:00
 
 on:
+  workflow_dispatch:
+    inputs:
+      publish_now:
+        description: "Send this report to Telegram now"
+        required: true
+        type: boolean
+        default: false
   schedule:
     # GitHub Actions cron uses UTC; Iran is UTC+03:30 year-round.
     - cron: "30 6 * * *"
@@ -31,6 +38,7 @@ jobs:
           python -u generate_gold_technical_report.py
       - name: Publish to FundBoard Gold Telegram channel
         env:
+          PUBLISH_TO_TELEGRAM: ${{ github.event_name == 'schedule' || inputs.publish_now }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
         run: python -u publish_gold_report.py --file gold_technical_draft.txt
