@@ -76,19 +76,19 @@ def build_scenarios(metrics):
     support, resistance = metrics["support"], metrics["resistance"]
     latest, trend = metrics["latest_close"], metrics["trend"]
     bullish_confirm = (
-        f"بسته‌شدن روزانه بالای مقاومت نزدیک \${resistance:,.2f}"
+        f"بسته‌شدن روزانه بالای مقاومت نزدیک ${resistance:,.2f}"
         if resistance is not None else "ثبت سقف نوسانی جدید و تأیید با بسته‌شدن روزانه"
     )
     bullish_invalid = (
-        f"بسته‌شدن روزانه زیر حمایت نزدیک \${support:,.2f}"
+        f"بسته‌شدن روزانه زیر حمایت نزدیک ${support:,.2f}"
         if support is not None else "از دست‌رفتن آخرین کف نوسانی معتبر"
     )
     bearish_confirm = (
-        f"بسته‌شدن روزانه زیر حمایت نزدیک \${support:,.2f}"
+        f"بسته‌شدن روزانه زیر حمایت نزدیک ${support:,.2f}"
         if support is not None else "ثبت کف نوسانی جدید و تأیید با بسته‌شدن روزانه"
     )
     bearish_invalid = (
-        f"بسته‌شدن روزانه بالای مقاومت نزدیک \${resistance:,.2f}"
+        f"بسته‌شدن روزانه بالای مقاومت نزدیک ${resistance:,.2f}"
         if resistance is not None else "عبور و تثبیت بالای آخرین سقف نوسانی معتبر"
     )
     if trend == "bullish":
@@ -99,12 +99,12 @@ def build_scenarios(metrics):
         bias = "میانگین‌های ۲۰ و ۵۰روزه جهت غالب یکسانی نشان نمی‌دهند؛ تأیید شکست محدوده اهمیت بیشتری دارد."
     if support is not None and resistance is not None:
         neutral = (
-            f"تا وقتی قیمت بین حمایت \${support:,.2f} و مقاومت \${resistance:,.2f} بماند، "
+            f"تا وقتی قیمت بین حمایت ${support:,.2f} و مقاومت ${resistance:,.2f} بماند، "
             "سناریوی نوسانی/خنثی معتبرتر است."
         )
     else:
         neutral = (
-            f"تا زمان شکست معتبر محدوده اخیر پیرامون \${latest:,.2f}، "
+            f"تا زمان شکست معتبر محدوده اخیر پیرامون ${latest:,.2f}، "
             "از نتیجه‌گیری جهت‌دار قطعی پرهیز شود."
         )
     return {
