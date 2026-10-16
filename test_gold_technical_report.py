@@ -1,7 +1,9 @@
 import unittest
 from datetime import date, timedelta
 
-from generate_gold_technical_report import (\n    build_scenarios, calculate_metrics, clean_closes, find_support_resistance, rsi,\n)
+from generate_gold_technical_report import (
+    build_scenarios, calculate_metrics, clean_closes, find_support_resistance, rsi,
+)
 
 
 def sample_points(count=60, start=100.0, step=1.0):
