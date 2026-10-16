@@ -113,12 +113,11 @@ def find_latest_monthly_article(page, now=None):
         # Prefer the latest YYYY/MM path rather than raw page order.
         return sorted(set(candidates), key=lambda url: tuple(map(int, re.search(r"/(\d{4})/(\d{2})$", url).groups())))[-1]
     # The WGC data page may omit the article href from server-rendered HTML.
-    # Probe recent official monthly paths, newest expected completed month first.
+    # Reports for the prior data month are usually published during the current month.
+    # Probe the current calendar path first, then fall back to earlier official paths.
     now = now or datetime.now(timezone.utc)
-    year, month = now.year, now.month - 1
-    if month == 0:
-        year, month = year - 1, 12
-    for _ in range(7):
+    year, month = now.year, now.month
+    for _ in range(8):
         candidates.append(f"https://www.gold.org/goldhub/research/gold-etfs-holdings-and-flows/{year}/{month:02d}")
         month -= 1
         if month == 0:
@@ -270,10 +269,8 @@ def main():
         candidate_urls = [article_url]
         # Probe older official monthly reports if the most recent expected page is not yet published.
         now = datetime.now(timezone.utc)
-        year, month = now.year, now.month - 1
-        if month == 0:
-            year, month = year - 1, 12
-        for _ in range(6):
+        year, month = now.year, now.month
+        for _ in range(7):
             candidate = f"https://www.gold.org/goldhub/research/gold-etfs-holdings-and-flows/{year}/{month:02d}"
             if candidate not in candidate_urls:
                 candidate_urls.append(candidate)
