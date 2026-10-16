@@ -103,13 +103,27 @@ def find_xlsx_links(page, keywords):
     return unique
 
 
-def find_latest_monthly_article(page):
+def find_latest_monthly_article(page, now=None):
     candidates = []
     for link in page["links"]:
         url = link["url"]
         if re.search(r"/goldhub/research/gold-etfs-holdings-and-flows/\d{4}/\d{2}(?:$|[?#])", url):
             candidates.append(url.split("?", 1)[0])
-    return candidates[-1] if candidates else None
+    if candidates:
+        # Prefer the latest YYYY/MM path rather than raw page order.
+        return sorted(set(candidates), key=lambda url: tuple(map(int, re.search(r"/(\d{4})/(\d{2})$", url).groups())))[-1]
+    # The WGC data page may omit the article href from server-rendered HTML.
+    # Probe recent official monthly paths, newest expected completed month first.
+    now = now or datetime.now(timezone.utc)
+    year, month = now.year, now.month - 1
+    if month == 0:
+        year, month = year - 1, 12
+    for _ in range(7):
+        candidates.append(f"https://www.gold.org/goldhub/research/gold-etfs-holdings-and-flows/{year}/{month:02d}")
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    return candidates[0] if candidates else None
 
 
 def extract_public_facts(page):
@@ -253,10 +267,27 @@ def main():
     article_url = find_latest_monthly_article(etf_page) if etf_page["text"] else None
     monthly_article = None
     if article_url:
-        try:
-            monthly_article = fetch_page(article_url)
-        except Exception as exc:
-            warnings.append(f"Latest monthly ETF article unavailable: {type(exc).__name__}: {exc}")
+        candidate_urls = [article_url]
+        # Probe older official monthly reports if the most recent expected page is not yet published.
+        now = datetime.now(timezone.utc)
+        year, month = now.year, now.month - 1
+        if month == 0:
+            year, month = year - 1, 12
+        for _ in range(6):
+            candidate = f"https://www.gold.org/goldhub/research/gold-etfs-holdings-and-flows/{year}/{month:02d}"
+            if candidate not in candidate_urls:
+                candidate_urls.append(candidate)
+            month -= 1
+            if month == 0:
+                year, month = year - 1, 12
+        for candidate in candidate_urls:
+            try:
+                possible = fetch_page(candidate)
+                if "Gold ETF Flows:" in possible["text"] and "Published:" in possible["text"]:
+                    monthly_article = possible
+                    break
+            except Exception as exc:
+                warnings.append(f"Monthly ETF article candidate unavailable: {type(exc).__name__}: {exc}")
     etf_results = [inspect_workbook(link["url"]) for link in etf_links[:3]]
     reserve_results = [inspect_workbook(link["url"]) for link in reserve_links[:3]]
     for warning in warnings:
