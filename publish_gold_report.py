@@ -48,8 +48,10 @@ def prepare_message(text, generated_at=None):
             continue
         body_lines.append(format_body_line(line))
     body = "\n".join(body_lines).strip()
+    iran_now = datetime.now(ZoneInfo("Asia/Tehran")).strftime("%Y-%m-%d %H:%M")
+    time_line = f"<i>🕒 زمان انتشار: {iran_now} به وقت ایران</i>"
     title_html = f"<b>{html.escape(title, quote=False)}</b>"
-    content = f"{title_html}\n\n{body}\n\n{FOOTER}" if body else f"{title_html}\n\n{FOOTER}"
+    content = f"{title_html}\n{time_line}\n\n{body}\n\n{FOOTER}" if body else f"{title_html}\n{time_line}\n\n{FOOTER}"
     if len(content) <= MAX_TELEGRAM_LENGTH:
         return content
 
