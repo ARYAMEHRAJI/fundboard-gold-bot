@@ -103,6 +103,35 @@ def find_xlsx_links(page, keywords):
     return unique
 
 
+def find_latest_monthly_article(page):
+    candidates = []
+    for link in page["links"]:
+        url = link["url"]
+        if re.search(r"/goldhub/research/gold-etfs-holdings-and-flows/\d{4}/\d{2}(?:$|[?#])", url):
+            candidates.append(url.split("?", 1)[0])
+    return candidates[-1] if candidates else None
+
+
+def extract_public_facts(page):
+    """Extract clearly attributed public article highlights; never infer values."""
+    text = page.get("text", "")
+    published = re.search(r"Published:\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})", text, re.I)
+    highlights = ""
+    match = re.search(r"Highlights\s+(.*?)(?:\s+Chart\s+\d+:|\s+Downloads:|\s+May in review|\s+September in review|\s+August in review)", text, re.I)
+    if match:
+        highlights = match.group(1).strip()[:1800]
+    else:
+        # Fallback: a short attributed opening summary after the publication date.
+        if published:
+            highlights = text[published.end():published.end() + 900].strip()
+    return {
+        "url": page.get("url", ""),
+        "title": page.get("title", ""),
+        "published": published.group(1) if published else "تاریخ انتشار در متن صفحه پیدا نشد",
+        "highlights": highlights or "خلاصه عددی قابل استخراج از متن عمومی پیدا نشد.",
+    }
+
+
 def inspect_workbook(url):
     try:
         with request(url) as response:
@@ -157,7 +186,7 @@ def format_workbook(label, result):
     return lines
 
 
-def build_report(etf_page, reserves_page, etf_files, reserve_files, generated_at=None):
+def build_report(etf_page, reserves_page, etf_files, reserve_files, generated_at=None, monthly_article=None):
     generated_at = generated_at or datetime.now(timezone.utc)
     lines = [
         "🟡 فاندبورد طلا | بررسی فایل‌های داده دوره‌ای شورای جهانی طلا",
@@ -169,6 +198,16 @@ def build_report(etf_page, reserves_page, etf_files, reserve_files, generated_at
         f"عنوان صفحه: {etf_page['title']}",
         "طبق روش انتشار منبع، داده‌های وب می‌توانند هفتگی و ماهانه باشند و فایل Excel معمولاً ماهانه منتشر می‌شود.",
     ]
+    if monthly_article:
+        facts = extract_public_facts(monthly_article)
+        lines.extend([
+            "آخرین گزارش ماهانه عمومی شناسایی‌شده:",
+            f"عنوان: {facts['title']}",
+            f"تاریخ انتشار درج‌شده در منبع: {facts['published']}",
+            f"پیوند مستقیم: {facts['url']}",
+            "خلاصه/نکات منتشرشده توسط منبع (متن منبع، نه محاسبه مستقل):",
+            facts["highlights"],
+        ])
     if etf_files:
         for item in etf_files[:3]:
             lines.extend(format_workbook("فایل داده ETF", item))
@@ -188,7 +227,8 @@ def build_report(etf_page, reserves_page, etf_files, reserve_files, generated_at
         lines.append("لینک فایل Excel از صفحه به‌صورت مطمئن شناسایی نشد؛ تغییر خریدوفروش محاسبه نشده است.")
     lines.extend([
         "",
-        "مرحله بعدی پس از تأیید ساختار و دسترسی فایل‌ها: تعریف ستون‌های معتبر، تشخیص تاریخ مرجع، کنترل واحدها و محاسبه تغییرات فقط بین دوره‌های قابل مقایسه.",
+        "فایل‌های Excel رسمی در این اجرا با خطای دسترسی 403 مواجه شدند؛ بنابراین هیچ سری عددی از فایل‌ها استخراج یا بازسازی نشده است.",
+        "گزارش ماهانه عمومی، در صورت دسترسی، به‌عنوان خلاصه منبعی جداگانه درج می‌شود و جایگزین داده خام Excel نیست.",
         "⚠️ محتوای آموزشی و اطلاعاتی؛ نه توصیه خرید یا فروش.",
         "Dry-run only: no Telegram message was sent.",
     ])
@@ -210,11 +250,18 @@ def main():
 
     etf_links = find_xlsx_links(etf_page, ["etf", "flow", "holdings"]) if etf_page["text"] else []
     reserve_links = find_xlsx_links(reserves_page, ["reserve", "gold", "change", "official"]) if reserves_page["text"] else []
+    article_url = find_latest_monthly_article(etf_page) if etf_page["text"] else None
+    monthly_article = None
+    if article_url:
+        try:
+            monthly_article = fetch_page(article_url)
+        except Exception as exc:
+            warnings.append(f"Latest monthly ETF article unavailable: {type(exc).__name__}: {exc}")
     etf_results = [inspect_workbook(link["url"]) for link in etf_links[:3]]
     reserve_results = [inspect_workbook(link["url"]) for link in reserve_links[:3]]
     for warning in warnings:
         print("WARNING:", warning)
-    report = build_report(etf_page, reserves_page, etf_results, reserve_results)
+    report = build_report(etf_page, reserves_page, etf_results, reserve_results, monthly_article=monthly_article)
     with open("gold_periodic_context_draft.txt", "w", encoding="utf-8") as output:
         output.write(report + "\n")
     print(report)
