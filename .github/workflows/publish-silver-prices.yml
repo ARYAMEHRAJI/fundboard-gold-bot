@@ -1,0 +1,40 @@
+name: Publish FundBoard Silver Prices
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_now:
+        description: "Publish to Telegram now"
+        required: true
+        type: boolean
+        default: false
+  schedule:
+    # Hourly at :35 UTC (15 minutes after the gold physical price workflow)
+    - cron: "35 8-15 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fundboard-silver-prices
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+      - name: Fetch and publish silver prices
+        env:
+          TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
+          TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
+          PUBLISH_TO_TELEGRAM: ${{ github.event_name == 'schedule' || inputs.publish_now }}
+        run: python publish_silver_prices.py
