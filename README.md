@@ -46,3 +46,15 @@ The live-source workflow is \`.github/workflows/validate-gold-news.yml\`. Run it
 - Do not put tokens or other secrets in source files or logs.
 - Do not merge the draft pull request or enable new Telegram publishing without explicit approval.
 - This project produces research context, not personalized investment advice.
+
+
+## Telegram research publishing schedule (Iran time)
+
+The research posts use Telegram HTML formatting, bold headlines and the requested FundBoard Gold footer. Each post includes the actual publication time in `Asia/Tehran`.
+
+- Technical gold report: daily at 10:00 Iran time (06:30 UTC).
+- Macro context: daily at 18:00 Iran time (14:30 UTC).
+- Periodic World Gold Council context: Mondays at 12:00 Iran time (08:30 UTC); figures retain their source publication period and are not presented as daily data.
+- The scheduled workflows publish only when the report generator succeeds. Missing/stale price data fails the technical run instead of sending a guessed report.
+- Manual runs have a `publish_now` confirmation checkbox; leave it unchecked for preview-only mode.
+- Required repository Actions secrets: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHANNEL_ID`. `WGC_GOLDHUB_COOKIE` is optional and only for authorized Goldhub access.
