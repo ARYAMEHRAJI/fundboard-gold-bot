@@ -12,6 +12,7 @@ PAGES = [
     ("انس جهانی نقره", "https://www.tgju.org/profile/silver", "USD/oz", "global"),
     ("گرم نقره ۹۹۹", "https://www.tgju.org/profile/silver_999", "ریال/گرم", "local"),
     ("گرم نقره ۹۲۵", "https://www.tgju.org/profile/silver_925", "ریال/گرم", "local"),
+    ("دلار آزاد", "https://www.tgju.org/profile/price_dollar_rl", "ریال", "currency"),
 ]
 
 def normalize_digits(text):
