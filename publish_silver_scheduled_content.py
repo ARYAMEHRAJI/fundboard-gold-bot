@@ -145,6 +145,10 @@ def split(text):
     return result
 
 def main():
+    # Fail closed: no scheduled/manual post is sent until the editorial review gate is explicitly enabled.
+    if os.getenv("ALLOW_REVIEWED_SILVER_PUBLICATION", "").strip().lower() != "true":
+        print("PUBLICATION_PAUSED: content quality review is incomplete; no Telegram message was sent.")
+        return
     if SCHEDULE not in JOBS:
         raise RuntimeError(f"Unknown SCHEDULE_KEY: {SCHEDULE!r}")
     if not TOKEN:
