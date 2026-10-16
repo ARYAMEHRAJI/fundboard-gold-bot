@@ -87,7 +87,7 @@ def find_xlsx_links(page, keywords):
     for link in page["links"]:
         target = link["url"].lower().split("?", 1)[0]
         label = link["label"].lower()
-        if target.endswith(".xlsx") or ".xlsx/" in target or "xlsx" in target:
+        if target.endswith(".xlsx") or ".xlsx/" in target or "xlsx" in target or "xlsx" in label:
             if any(word in label or word in target for word in keywords):
                 found.append(link)
     # Keep distinct links in page order.
