@@ -84,6 +84,48 @@ def strip_markup(raw):
     raw = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", raw)
     return raw.strip()
 
+def polish_body(body, schedule):
+    blocked = [
+        "dry-run", "dry run", "no telegram message", "telegram_messages_sent",
+        "منابع:", "منبع داده تاریخی:", "منبع خبرها:", "منبع مرجع",
+        "روش:", "محدودیت:", "Yahoo Finance", "Google News", "FRED",
+        "TimeoutError", "HTTPError", "URLError", "ValueError", "RuntimeError",
+        "دریافت خبر ناموفق بود:", "داده معتبر در دسترس نیست (",
+        "در این گزارش، ارقام بازدهی دوره‌ای منتشر نمی‌شوند",
+    ]
+    cleaned = []
+    for raw in body.splitlines():
+        line = raw.strip()
+        low = line.lower()
+        if not line:
+            if cleaned and cleaned[-1] != "":
+                cleaned.append("")
+            continue
+        if any(term.lower() in low for term in blocked):
+            continue
+        if "http://" in low or "https://" in low:
+            continue
+        if "حالت آزمایشی:" in line or "پیامی ارسال نشد" in line:
+            continue
+        line = line.replace("iShares Silver Trust", "صندوق نقره")
+        line = line.replace("abrdn Physical Silver Shares ETF", "صندوق نقره")
+        line = line.replace("Sprott Physical Silver Trust", "تراست نقره فیزیکی")
+        line = line.replace("ETFها", "صندوق‌های قابل معامله")
+        line = line.replace("ETF", "صندوق قابل معامله")
+        line = line.replace("UTC", "به وقت جهانی")
+        line = line.replace("USD", "دلار")
+        line = line.replace("SMA", "میانگین متحرک")
+        line = line.replace("RSI", "شاخص قدرت نسبی")
+        if re.fullmatch(r"[A-Za-z0-9_./:=?&%+ -]{8,}", line):
+            continue
+        cleaned.append(line)
+    body = "\\n".join(cleaned).strip()
+    body = re.sub(r"\\n{3,}", "\\n\\n", body)
+    meaningful = [line for line in body.splitlines() if re.search(r"[\\u0600-\\u06FF]", line)]
+    if len(meaningful) < 3:
+        raise RuntimeError("پس از بازبینی، متن فارسی کافی برای انتشار باقی نماند.")
+    return body
+
 def split(text):
     result = []
     while len(text) > MAX_LEN:
@@ -116,6 +158,7 @@ def main():
         body = strip_markup(command_outputs[-1] if command_outputs else "")
     if not body:
         raise RuntimeError(f"Expected generated output is missing or empty: {file_path}")
+    body = polish_body(body, SCHEDULE)
     # Do not allow the retired Iranian silver-fund diagnostic into scheduled posts.
     body = re.sub(r"(?is).*?تشخیص منبع صندوق‌های نقره ایران.*?(?=━━━━━━━━━━━━━━━━|$)", "", body).strip()
     if not body:
