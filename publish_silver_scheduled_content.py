@@ -76,8 +76,8 @@ def run(command):
     return result.stdout
 
 def strip_markup(raw):
-    raw = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", " ", raw)
-    raw = re.sub(r"(?i)<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\n", raw)
+    raw = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", raw)
+    raw = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\n", raw)
     raw = re.sub(r"<[^>]+>", " ", raw)
     raw = html.unescape(raw)
     raw = re.sub(r"[ \t]+", " ", raw)
