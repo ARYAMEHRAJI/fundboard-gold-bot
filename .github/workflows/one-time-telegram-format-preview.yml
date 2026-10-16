@@ -1,0 +1,27 @@
+name: One-time Telegram formatting preview
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "telegram_format_test.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  send-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Send one explicitly requested preview to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          PUBLISH_TO_TELEGRAM: "true"
+        run: python -u publish_gold_report.py --file telegram_format_test.txt
