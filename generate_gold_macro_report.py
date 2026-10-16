@@ -4,6 +4,7 @@ import io
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from email.utils import parsedate_to_datetime
 
 FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
@@ -94,53 +95,50 @@ def parse_fed_press_releases(xml_text, now=None, max_age_days=MAX_NEWS_AGE_DAYS,
 def build_macro_snapshot(series_results, fed_items, generated_at=None):
     generated_at = generated_at or datetime.now(timezone.utc)
     labels = {
-        "DFII10": ("US 10-year real Treasury yield", "%"),
-        "DTWEXBGS": ("US broad trade-weighted dollar index", "index points"),
-        "DFF": ("Effective federal funds rate", "%"),
+        "DFII10": ("بازده واقعی اوراق خزانه‌داری ۱۰ساله آمریکا", "درصد"),
+        "DTWEXBGS": ("شاخص گسترده وزنی دلار آمریکا", "واحد شاخص"),
+        "DFF": ("نرخ مؤثر وجوه فدرال آمریکا", "درصد"),
     }
     lines = [
-        "🟡 FundBoard Gold | Macro context draft",
-        f"Generated at (UTC): {generated_at.isoformat()}",
+        "🌐 فاندبورد طلا | بررسی عوامل بنیادی اونس جهانی",
+        f"🕒 زمان تهیه گزارش به وقت ایران: {generated_at.astimezone(ZoneInfo('Asia/Tehran')).strftime('%Y-%m-%d %H:%M')}",
         "",
-        "This is macro context for gold, not a standalone trading signal.",
+        "این گزارش زمینه اقتصاد کلان را بررسی می‌کند و به‌تنهایی سیگنال معاملاتی نیست.",
         "",
-        "📌 Latest validated observations",
+        "📌 آخرین داده‌های معتبر و تاریخ مشاهده",
     ]
     any_series = False
     for series_id, (label, unit) in labels.items():
         result = series_results.get(series_id)
         if not result:
-            lines.append(f"- {label}: unavailable (source fetch or freshness check failed)")
+            lines.append(f"- {label}: در دسترس نیست (دریافت منبع یا کنترل تازگی داده ناموفق بود)")
             continue
         any_series = True
         lines.append(
-            f"- {label}: {result['value']:.3f} {unit}; observation date: {result['date']} "
-            f"(age: {result['age_days']} day(s))."
+            f"- {label}: {result['value']:.3f} {unit}؛ تاریخ داده: {result['date']} "
+            f"(قدمت داده: {result['age_days']} روز)."
         )
     lines.extend([
         "",
-        "How to read this (not a mechanical signal): rising real yields or a stronger dollar can weigh on gold, "
-        "while falling real yields or a weaker dollar can support it. Market context and expectations can override "
-        "these relationships. The broad dollar index is not the DXY index.",
+        "🧭 تفسیر: افزایش بازده واقعی یا تقویت دلار می‌تواند بر طلا فشار وارد کند؛ کاهش بازده واقعی یا تضعیف دلار ممکن است از طلا حمایت کند. شرایط بازار و انتظارات می‌توانند این رابطه‌ها را تغییر دهند. شاخص دلار این گزارش، شاخص گسترده تجاری است و با DXY تفاوت دارد.",
         "",
-        "🏛️ Recent Federal Reserve press releases (up to 14 days old)",
+        "🏛️ اطلاعیه‌های اخیر فدرال رزرو (حداکثر ۱۴ روز اخیر)",
     ])
     if fed_items:
         for item in fed_items:
             lines.append(f"- {item['published_utc']}: {item['title']} — {item['url']}")
     else:
-        lines.append("- No recent eligible releases were retrieved; this is not evidence that no relevant news exists.")
+        lines.append("- اطلاعیه واجد شرایطی دریافت نشد؛ این موضوع به معنی نبود خبر مرتبط نیست.")
     lines.extend([
         "",
-        "Sources:",
-        "- FRED DFII10 (10-year inflation-indexed Treasury yield): https://fred.stlouisfed.org/series/DFII10",
-        "- FRED DTWEXBGS (broad trade-weighted dollar index): https://fred.stlouisfed.org/series/DTWEXBGS",
-        "- FRED DFF (effective federal funds rate): https://fred.stlouisfed.org/series/DFF",
-        "- Federal Reserve press releases RSS: https://www.federalreserve.gov/feeds/press_all.xml",
+        "🔗 منابع:",
+        "- FRED، بازده واقعی اوراق ۱۰ساله: https://fred.stlouisfed.org/series/DFII10",
+        "- FRED، شاخص گسترده دلار: https://fred.stlouisfed.org/series/DTWEXBGS",
+        "- FRED، نرخ مؤثر وجوه فدرال: https://fred.stlouisfed.org/series/DFF",
+        "- اطلاعیه‌های فدرال رزرو: https://www.federalreserve.gov/feeds/press_all.xml",
         "",
-        "Data limitations: ETF flows and central-bank gold purchases are not daily series here. "
-        "They must be added from dated, authoritative releases and must not be presented as daily observations.",
-        "⚠️ Educational market context only; not investment advice.",
+        "محدودیت داده: جریان ETFها و خرید طلای بانک‌های مرکزی در این گزارش داده روزانه نیستند و باید با تاریخ انتشار معتبر گزارش شوند.",
+        "⚠️ این گزارش آموزشی است و توصیه خرید یا فروش محسوب نمی‌شود."
     ])
     return "\n".join(lines)
 
