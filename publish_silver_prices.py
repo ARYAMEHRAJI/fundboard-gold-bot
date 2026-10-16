@@ -3,6 +3,7 @@ import re
 import sys
 import html
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
@@ -129,6 +130,10 @@ def main():
     publish = os.getenv("PUBLISH_TO_TELEGRAM", "false").lower() == "true"
     items = [parse_page(*page) for page in PAGES]
     post = build_post(items)
+    preview = Path("silver_content_preview/silver_prices.html")
+    preview.parent.mkdir(parents=True, exist_ok=True)
+    preview.write_text(post + "\\n", encoding="utf-8")
+    print(f"PRICE_PREVIEW_FILE: {preview}")
     print(post)
     if publish:
         send(post)
