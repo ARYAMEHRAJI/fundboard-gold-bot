@@ -104,7 +104,6 @@ def build_post(items):
             lines.append(f'   تغییر روزانه: {fa(sign + format(item["percent"], ".2f"))}٪')
     lines.extend([
         "",
-        "ℹ️ نرخ‌های داخلی، قیمت مرجع‌اند؛ قیمت نهایی شمش و زیورآلات می‌تواند با اجرت، حاشیه فروش و هزینه‌های جانبی متفاوت باشد.",
         '<b><a href="https://t.me/FundBoard_Silver">@FundBoard_Silver | فاندبورد نقره\n‎داشبورد</a></b> <b><a href="https://t.me/FundBoard_Silver">سرمایه‌گذاری شما</a></b>',
     ])
     return "\n".join(lines)
