@@ -1,4 +1,4 @@
-name: Validate Gold News Logic
+name: Validate Gold News and Technical Logic
 
 on:
   push:
@@ -22,8 +22,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compile gold news scripts
-        run: python -m py_compile analyze_gold_news.py publish_gold_news.py
+      - name: Compile analysis scripts
+        run: python -m py_compile analyze_gold_news.py publish_gold_news.py generate_gold_technical_report.py
 
-      - name: Run offline gold news tests
-        run: python -m unittest -v test_gold_news_logic.py
+      - name: Run offline tests
+        run: python -m unittest -v test_gold_news_logic.py test_gold_technical_report.py
+
+      - name: Generate technical draft from live source data
+        run: python -u generate_gold_technical_report.py
+
+      - name: Upload technical draft
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-technical-draft
+          path: gold_technical_draft.txt
+          if-no-files-found: error
+          retention-days: 7
