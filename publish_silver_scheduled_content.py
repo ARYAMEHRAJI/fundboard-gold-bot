@@ -148,10 +148,10 @@ def cloudflare_edit(source, label):
             (r"(?i)abrdn\s+Physical\s+Silver\s+Shares\s+ETF", "صندوق نقره فیزیکی"),
             (r"(?i)iShares\s+Silver\s+Trust", "صندوق نقره"),
             (r"(?i)Sprott\s+Physical\s+Silver\s+Trust", "تراست نقره فیزیکی"),
-            (r"(?i)SI=F", "قرارداد آتی نقره"), (r"(?i)SLV", "صندوق نقره"),
-            (r"(?i)SIVR", "صندوق نقره فیزیکی"), (r"(?i)PSLV", "تراست نقره فیزیکی"),
-            (r"(?i)RSI(?:[- ]?14)?", "شاخص قدرت نسبی"), (r"(?i)NAV", "ارزش خالص دارایی‌ها"),
-            (r"(?i)AUM", "ارزش دارایی‌های تحت مدیریت"), (r"(?i)ETFs?|ETFها", "صندوق قابل معامله"),
+            (r"(?i)\\bSI=F\\b", "قرارداد آتی نقره"), (r"(?i)\\bSLV\\b", "صندوق نقره"),
+            (r"(?i)\\bSIVR\\b", "صندوق نقره فیزیکی"), (r"(?i)\\bPSLV\\b", "تراست نقره فیزیکی"),
+            (r"(?i)\\bRSI(?:[- ]?14)?\\b", "شاخص قدرت نسبی"), (r"(?i)\\bNAV\\b", "ارزش خالص دارایی‌ها"),
+            (r"(?i)\\bAUM\\b", "ارزش دارایی‌های تحت مدیریت"), (r"(?i)\\bETFs?\\b|ETFها", "صندوق قابل معامله"),
             (r"(?i)USD", "دلار آمریکا"),
             (r"(?i)Yahoo Finance|Google News|FRED|Reuters|Bloomberg|FinanceFeeds|SilverTrade|FXStreet|Business Today|CaptainAltcoin", " "),
             (r"(?i)Federal Reserve|Fed", "بانک مرکزی آمریکا"), (r"(?i)gold", "طلا"),
@@ -205,7 +205,7 @@ def cloudflare_edit(source, label):
                 before = candidate_norm[max(0, match.start()-35):match.start()]
                 context = before + candidate_norm[match.end():match.end()+35]
                 has_minus = before.rstrip().endswith(("-", "−"))
-                if not has_minus and not re.search(r"کاهش|افت|منفی|نزول|کمتر", context):
+                if not has_minus:
                     issues.append("علامت منفی بازده در متن به‌اشتباه مثبت یا خنثی شده است")
                     break
             if issues and issues[-1] == "علامت منفی بازده در متن به‌اشتباه مثبت یا خنثی شده است":
