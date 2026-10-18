@@ -118,16 +118,12 @@ def html_format(text, label):
     if not headline:
         headline = label
     out = [f"<b>{html.escape(headline, quote=False)}</b>", ""]
-    first_content = False
     for line in lines:
         if not line:
             out.append("")
             continue
         safe = html.escape(line, quote=False)
-        if first_content:
-            safe = f"<b>{safe}</b>"
-            first_content = False
-        elif re.match(r"^(🔎|🧭|📌|📈|📉|⚖️|💡|🌍|🥈|⚠️|سناریوی مثبت|سناریوی منفی|جمع‌بندی تحلیلی|برداشت تحلیلی|نتیجه‌گیری|نکته کلیدی|مهم‌ترین نکته|چرا مهم است|چه چیزی را باید رصد کرد)", line):
+        if re.match(r"^(🔎|🧭|📌|📈|📉|⚖️|💡|🌍|🥈|⚠️|سناریوی مثبت|سناریوی منفی|جمع‌بندی تحلیلی|برداشت تحلیلی|نتیجه‌گیری|نکته کلیدی|مهم‌ترین نکته|چرا مهم است|چه چیزی را باید رصد کرد)", line):
             safe = f"<b>{safe}</b>"
         else:
             safe = re.sub(r"^([•▪🔹-]\s*[^:：]{2,35}[:：])", r"<b>\1</b>", safe)
