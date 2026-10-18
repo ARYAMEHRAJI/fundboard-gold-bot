@@ -209,8 +209,10 @@ def cloudflare_edit(source, label):
         for number in negative_returns:
             number = re.escape(number.replace(",", "."))
             for match in re.finditer(number + r" *%", candidate_norm):
-                context = candidate_norm[max(0, match.start()-35):match.end()+35]
-                if not re.search(r"کاهش|افت|منفی|نزول|کمتر", context):
+                before = candidate_norm[max(0, match.start()-35):match.start()]
+                context = before + candidate_norm[match.end():match.end()+35]
+                has_minus = before.rstrip().endswith(("-", "−"))
+                if not has_minus and not re.search(r"کاهش|افت|منفی|نزول|کمتر", context):
                     issues.append("علامت منفی بازده در متن به‌اشتباه مثبت یا خنثی شده است")
                     break
             if issues and issues[-1] == "علامت منفی بازده در متن به‌اشتباه مثبت یا خنثی شده است":
