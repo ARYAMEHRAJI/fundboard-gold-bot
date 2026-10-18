@@ -42,12 +42,12 @@ def run(command):
     return result.stdout
 
 def plain_text(raw):
-    raw = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", " ", raw)
-    raw = re.sub(r"(?i)<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\\n", raw)
+    raw = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", raw)
+    raw = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\n", raw)
     raw = re.sub(r"<[^>]+>", " ", raw)
-    raw = html.unescape(raw).replace("\\r", "")
-    raw = re.sub(r"[ \\t]+", " ", raw)
-    raw = re.sub(r"\\n[ \\t]*\\n[ \\t]*\\n+", "\\n\\n", raw)
+    raw = html.unescape(raw).replace("\r", "")
+    raw = re.sub(r"[ \t]+", " ", raw)
+    raw = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", raw)
     return raw.strip()
 
 def cloudflare_edit(source, label):
@@ -72,7 +72,7 @@ def cloudflare_edit(source, label):
         "از تکرار داده بدون تحلیل، ادعای قطعیت، توصیه مستقیم خریدوفروش و جملات کلیشه‌ای پرهیز کن. "
         "خروجی فقط متن نهایی قابل انتشار باشد؛ هیچ مقدمه‌ای درباره کاری که انجام داده‌ای ننویس."
     )
-    user = f"دسته محتوا: {label}\\n\\nمتن خام و داده‌های موجود:\\n{source[:18000]}\\n\\nیک پست نهایی فارسی و تحلیلی تولید کن."
+    user = f"دسته محتوا: {label}\n\nمتن خام و داده‌های موجود:\n{source[:18000]}\n\nیک پست نهایی فارسی و تحلیلی تولید کن."
     payload = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": user}], "max_tokens": 1600, "temperature": 0.25}
     req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
@@ -125,15 +125,15 @@ def html_format(text, label):
         elif re.match(r"^(🔎|🧭|📌|📈|📉|⚖️|💡|سناریوی مثبت|سناریوی منفی|جمع‌بندی تحلیلی|برداشت تحلیلی|نتیجه‌گیری|نکته کلیدی|مهم‌ترین نکته)", line):
             safe = f"<b>{safe}</b>"
         else:
-            safe = re.sub(r"^([•▪🔹-]\\s*[^:：]{2,35}[:：])", r"<b>\\1</b>", safe)
+            safe = re.sub(r"^([•▪🔹-]\s*[^:：]{2,35}[:：])", r"<b>\1</b>", safe)
         out.append(safe)
-    return "\\n".join(out).strip()
+    return "\n".join(out).strip()
 
 def split(text):
     # Split only on line boundaries; Telegram HTML parse mode is enabled for every part.
     result = []
     while len(text) > MAX_LEN:
-        cut = text.rfind("\\n", 0, MAX_LEN)
+        cut = text.rfind("\n", 0, MAX_LEN)
         if cut < MAX_LEN // 2:
             cut = MAX_LEN
         result.append(text[:cut].strip())
@@ -169,7 +169,7 @@ def main():
     chunks = split(body)
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     for i, chunk in enumerate(chunks, 1):
-        message = f"{chunk}\\n\\n{FOOTER}"
+        message = f"{chunk}\n\n{FOOTER}"
         response = requests.post(url, json={"chat_id": CHANNEL, "text": message, "parse_mode": "HTML",
             "disable_web_page_preview": True}, timeout=30)
         response.raise_for_status()
