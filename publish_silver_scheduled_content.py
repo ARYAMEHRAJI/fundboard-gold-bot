@@ -284,8 +284,12 @@ def cloudflare_edit(source, label):
             f'داده‌های خام برای کنترل صحت: {source[:9000]}\nمتن نیازمند اصلاح: {text}\n'
             'بازنویسی کن و قبل از پاسخ، نبودن کلمات بیگانه و حفظ علامت بازده‌ها را کنترل کن.'
         )
-        text = ask([{'role': 'system', 'content': repair_system}, {'role': 'user', 'content': repair_user}], 1400)
-        text = sanitize(text)
+        try:
+            text = ask([{'role': 'system', 'content': repair_system}, {'role': 'user', 'content': repair_user}], 1400)
+            text = sanitize(text)
+        except Exception as exc:
+            print(f"WARNING: AI repair unavailable ({type(exc).__name__}); using conservative Persian fallback.")
+            text = sanitize(deterministic_fallback())
         issues = quality_issues(text)
     if issues:
         raise RuntimeError('متن پس از سه مرحله بازبینی از کنترل کیفیت عبور نکرد؛ برای جلوگیری از انتشار محتوای خراب متوقف شد: ' + '؛ '.join(issues))
