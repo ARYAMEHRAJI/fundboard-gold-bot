@@ -59,7 +59,7 @@ def main():
    lines.append(f"• تاریخ {dt:%Y-%m-%d}: {title}")
  except Exception:
   pass
- if ok==0 and len(lines)<=4:
+ if ok==0 and not items:
   raise SystemExit("داده بنیادی معتبر یا خبر مرتبط دریافت نشد؛ انتشار متوقف شد.")
  report="\n".join(lines).strip()
  OUT.write_text(report,encoding="utf-8")
