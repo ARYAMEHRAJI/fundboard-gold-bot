@@ -15,7 +15,7 @@ TOKEN = os.getenv("TELEGRAM_SILVER_BOT_TOKEN", "").strip()
 CHANNEL = os.getenv("TELEGRAM_SILVER_CHANNEL_ID", "@FundBoard_Silver").strip()
 SCHEDULE = os.getenv("SCHEDULE_KEY", "").strip()
 MAX_LEN = 3500
-FOOTER = '<b><a href="https://t.me/FundBoard_Silver">@FundBoard_Silver | فاندبورد نقره</a></b>'
+FOOTER = '<b><a href="https://t.me/FundBoard_Silver">@FundBoard_Silver | فاندبورد نقره\nداشبورد سرمایه‌گذاری شما</a></b>'
 
 JOBS = {
     "technical": {"label": "تحلیل تکنیکال نقره", "commands": [["generate_silver_technical_report.py"]], "file": "silver_technical_report.txt"},
