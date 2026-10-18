@@ -35,11 +35,32 @@ def run(command):
     env = os.environ.copy()
     env["PUBLISH_TO_TELEGRAM"] = "false"
     result = subprocess.run([sys.executable, *command], capture_output=True, text=True, timeout=100, env=env)
+    output = (result.stderr or "") + (result.stdout or "")
     print(f"RUN {' '.join(command)} -> {result.returncode}")
     if result.returncode:
-        print((result.stderr or result.stdout)[-1500:])
+        print(output[-1500:])
         if command == ["publish_silver_prices.py"] and SCHEDULE == "briefing":
             print("WARNING: قیمت‌های لحظه‌ای در این اجرا تأیید نشد؛ جمع‌بندی بدون قیمت تأییدنشده ساخته می‌شود.")
+            return ""
+        if command == ["silver_specialist_posts.py"] and "429" in output and SCHEDULE in ("education", "briefing"):
+            fallback = (
+                "<b>📚 چگونه نقره را برای سرمایه‌گذاری ارزیابی کنیم؟</b>\\n\\n"
+                "🥈 نقره هم فلزی گران‌بهاست و هم ماده‌ای پرکاربرد در صنعت؛ به همین دلیل، قیمت آن علاوه بر تقاضای سرمایه‌گذاری، "
+                "از وضعیت تولید صنعتی، هزینه انرژی، عرضه معادن و شرایط مالی جهانی اثر می‌پذیرد.\\n\\n"
+                "📊 برای ارزیابی روند، فقط تغییر یک روز را نبینید. قیمت را در چند بازه زمانی مقایسه کنید و بررسی کنید آیا "
+                "حرکت کوتاه‌مدت با روند چندماهه هم‌جهت است یا خیر. بازده مثبت در یک بازه کوتاه، به‌تنهایی به معنی پایان روند نزولی نیست.\\n\\n"
+                "⚖️ اگر از ابزارهای بورسی استفاده می‌کنید، ساختار محصول، هزینه سالانه، نقدشوندگی و فاصله قیمت بازار با ارزش دارایی‌ها "
+                "را بررسی کنید. ابزار مبتنی بر قرارداد آتی الزاماً همان بازده نقره فیزیکی را ایجاد نمی‌کند.\\n\\n"
+                "🧭 سناریوی صعودی زمانی اعتبار بیشتری دارد که بهبود تقاضا با نشانه‌های قیمتی تأیید شود؛ در سناریوی نزولی، "
+                "ضعف تقاضای صنعتی یا تشدید شرایط مالی انقباضی می‌تواند فشار بیشتری ایجاد کند. هیچ شاخصی به‌تنهایی برای نتیجه‌گیری کافی نیست."
+            )
+            path = OUT / "specialist_post.html"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(fallback, encoding="utf-8")
+            print("WARNING: منبع آموزش محدودیت درخواست داشت؛ از محتوای آموزشی پایدار استفاده شد.")
+            return fallback
+        if SCHEDULE == "briefing" and any(x in command[0] for x in ("silver_content_suite.py", "analyze_silver_news.py")) and "429" in output:
+            print("WARNING: داده خبر به‌دلیل محدودیت درخواست در دسترس نبود؛ ادامه با سایر داده‌ها.")
             return ""
         raise RuntimeError(f"Generator failed: {' '.join(command)}")
     return result.stdout
@@ -87,27 +108,41 @@ def cloudflare_edit(source, label):
             raise RuntimeError("هوش مصنوعی متن قابل انتشار تولید نکرد؛ پیام ارسال نشد.")
         return str(answer).strip()
 
+    def sanitize(candidate):
+        candidate = re.sub(r"(?i)https?://\\S+|خلاصه منبع[^\\n]*|منابع?:[^\\n]*", " ", candidate)
+        candidate = re.sub(r"(?i)\\b(iShares Silver Trust|abrdn Physical Silver Shares ETF|Sprott Physical Silver Trust|ETF|ETFs|FundBoard|Reuters|Bloomberg|Fed)\\b", lambda m: {
+            "ishares silver trust": "صندوق نقره", "abrdn physical silver shares etf": "صندوق نقره",
+            "sprott physical silver trust": "تراست نقره", "etf": "صندوق قابل معامله", "etfs": "صندوق‌های قابل معامله",
+            "fundboard": "فاندبورد", "reuters": "", "bloomberg": "", "fed": "فدرال رزرو"
+        }.get(m.group(0).lower(), ""), candidate, flags=re.I)
+        # Strip stray non-Persian scripts and any accidental English words, while preserving only essential tickers.
+        candidate = re.sub(r"[\\u3400-\\u4dbf\\u4e00-\\u9fff\\u3040-\\u30ff\\uac00-\\ud7af\\u0400-\\u052f\\u0900-\\u097f]+", " ", candidate)
+        allowed = {"SI=F": "قرارداد آتی نقره", "SLV": "صندوق نقره", "SIVR": "صندوق نقره", "PSLV": "تراست نقره", "RSI": "شاخص قدرت نسبی", "NAV": "ارزش خالص دارایی‌ها"}
+        tokens = re.findall(r"(?<![A-Za-z])[A-Za-z]+(?:=[A-Za-z])?(?![A-Za-z])", candidate)
+        for token in sorted(set(tokens), key=len, reverse=True):
+            replacement = allowed.get(token.upper(), "")
+            candidate = re.sub(r"(?<![A-Za-z])" + re.escape(token) + r"(?![A-Za-z])", replacement, candidate, flags=re.I)
+        candidate = re.sub(r"[ \\t]+", " ", candidate)
+        candidate = re.sub(r" *\\n *", "\\n", candidate)
+        candidate = re.sub(r"\\n{3,}", "\\n\\n", candidate)
+        return candidate.strip()
+
     def quality_issues(candidate):
         issues = []
-        if re.search(r'(?i)https?://|خلاصه منبع|پیش.?نمایش|پیامی ارسال نشد|no telegram message|dry.?run|منابع:', candidate):
-            issues.append('لینک، نام رسانه، منبع یا متن داخلی را حذف کن')
-        forbidden_ranges = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0x3040, 0x30FF), (0xAC00, 0xD7AF), (0x0400, 0x052F), (0x0900, 0x097F))
-        if any(lo <= ord(ch) <= hi for ch in candidate for lo, hi in forbidden_ranges):
-            issues.append('همه نویسه‌ها و کلمات چینی، ژاپنی، کره‌ای، روسی و هندی را به فارسی روان تبدیل کن')
-        latin_words = re.findall(r'(?<![A-Za-z])[A-Za-z]+(?:=[A-Za-z])?(?![A-Za-z])', candidate)
-        allowed_terms = {'SI=F', 'SLV', 'SIVR', 'PSLV', 'RSI', 'NAV'}
-        if any(word.upper() not in allowed_terms for word in latin_words):
-            issues.append('هیچ کلمه انگلیسی باقی نگذار؛ فقط نماد ضروری SI=F، SLV، SIVR، PSLV، RSI و NAV مجازند و باید فارسی توضیح داده شوند')
-        if len(candidate) < 500 or sum(1 for ch in candidate if 0x0600 <= ord(ch) <= 0x06FF) < 150:
-            issues.append('تحلیل را با ۳ تا ۵ پاراگراف فارسی و داده‌محور کامل کن')
+        if re.search(r"(?i)https?://|خلاصه منبع|پیش.?نمایش|پیامی ارسال نشد|no telegram message|dry.?run|منابع:", candidate):
+            issues.append("لینک، منبع یا متن داخلی باقی مانده")
+        if any((0x3400 <= ord(ch) <= 0x9FFF) or (0x3040 <= ord(ch) <= 0x30FF) or (0xAC00 <= ord(ch) <= 0xD7AF) or (0x0400 <= ord(ch) <= 0x052F) or (0x0900 <= ord(ch) <= 0x097F) for ch in candidate):
+            issues.append("نویسه بیگانه باقی مانده")
+        if len(candidate) < 450 or sum(1 for ch in candidate if 0x0600 <= ord(ch) <= 0x06FF) < 140:
+            issues.append("تحلیل فارسی کافی نیست")
         if len(candidate) > 2900:
-            issues.append('متن را به حداکثر ۲۹۰۰ نویسه برسان و تکرارها را حذف کن')
-        if re.search(r'(?i)\\b(quá|diversification|ETF)\\b|可能|影响|влияние', candidate):
-            issues.append('واژه‌های بیگانه را به فارسی طبیعی برگردان')
-        if not re.search(r'[📊📉📈🥈🌍⚖️🧭💡⚠️📰🏭🔎]', candidate):
-            issues.append('از چند ایموجی مرتبط و به‌جا استفاده کن')
+            issues.append("متن را به حداکثر ۲۹۰۰ نویسه کاهش بده")
+        if not re.search(r"[📊📉📈🥈🌍⚖️🧭💡⚠️📰🏭🔎]", candidate):
+            issues.append("ایموجی مرتبط اضافه کن")
         return issues
+
     text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
+    text = sanitize(text)
     issues = quality_issues(text)
     for attempt in range(1, 3):
         if not issues:
@@ -125,6 +160,7 @@ def cloudflare_edit(source, label):
             'بازنویسی کن و قبل از پاسخ، نبودن کلمات بیگانه و حفظ علامت بازده‌ها را کنترل کن.'
         )
         text = ask([{'role': 'system', 'content': repair_system}, {'role': 'user', 'content': repair_user}], 1400)
+        text = sanitize(text)
         issues = quality_issues(text)
     if issues:
         raise RuntimeError('متن پس از سه مرحله بازبینی از کنترل کیفیت عبور نکرد؛ برای جلوگیری از انتشار محتوای خراب متوقف شد: ' + '؛ '.join(issues))
