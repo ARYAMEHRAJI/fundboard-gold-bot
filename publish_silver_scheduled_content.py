@@ -19,7 +19,7 @@ FOOTER = '<b><a href="https://t.me/FundBoard_Silver">@FundBoard_Silver | فان�
 
 JOBS = {
     "technical": {"label": "تحلیل تکنیکال نقره", "commands": [["generate_silver_technical_report.py"]], "file": "silver_technical_report.txt"},
-    "news": {"label": "رصد و تحلیل اخبار نقره", "commands": [["analyze_silver_news.py"], ["silver_content_suite.py"]], "file": "news_analysis.html"},
+    "news": {"label": "رصد و تحلیل اخبار نقره", "commands": [["analyze_silver_news.py"]], "file": "news_analysis.html"},
     "periodic": {"label": "بازدهی دوره‌ای بازار جهانی نقره", "commands": [["generate_silver_periodic_report.py"]], "file": "periodic_returns.html"},
     "comparison": {"label": "مقایسه طلا و نقره", "commands": [["generate_silver_gold_comparison.py"]], "file": "../silver_gold_comparison_preview.html"},
     "macro": {"label": "تحلیل بنیادی و اقتصاد کلان نقره", "commands": [["generate_silver_macro_report.py"]], "file": "macro_report.html"},
