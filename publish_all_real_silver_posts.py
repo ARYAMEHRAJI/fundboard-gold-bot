@@ -22,20 +22,33 @@ def main():
         env["SCHEDULE_KEY"] = key
         env["ALLOW_REVIEWED_SILVER_PUBLICATION"] = "true"
         env["TELEGRAM_SILVER_CHANNEL_ID"] = "@FundBoard_Silver"
-        result = subprocess.run(
-            [sys.executable, "publish_silver_scheduled_content.py"],
-            env=env, capture_output=True, text=True, timeout=240
-        )
-        output = (result.stdout or "") + (result.stderr or "")
-        print(f"===== {label} [{key}] exit={result.returncode} =====", flush=True)
-        print(output[-5000:], flush=True)
-        sent = ("Published " in output and result.returncode == 0
-                and "AI_REWRITTEN=true" in output
-                and "PERSIAN_ONLY_CHECK=passed" in output
-                and "BOLD_LINKED_FOOTER=true" in output
-                and "ERROR:" not in output)
+        sent = False
+        output = ""
+        for attempt in range(1, 3):
+            try:
+                result = subprocess.run(
+                    [sys.executable, "publish_silver_scheduled_content.py"],
+                    env=env, capture_output=True, text=True, timeout=300
+                )
+                output = (result.stdout or "") + (result.stderr or "")
+                sent = ("Published " in output and result.returncode == 0
+                        and "AI_REWRITTEN=true" in output
+                        and "PERSIAN_ONLY_CHECK=passed" in output
+                        and "BOLD_LINKED_FOOTER=true" in output
+                        and "ERROR:" not in output)
+            except subprocess.TimeoutExpired as exc:
+                output = f"ERROR: category timed out on attempt {attempt}: {exc}"
+                sent = False
+            print(f"===== {label} [{key}] attempt={attempt} sent={sent} =====", flush=True)
+            print(output[-5000:], flush=True)
+            if sent or "Published " in output:
+                sent = sent and "ERROR:" not in output
+                break
+            if attempt < 2:
+                print(f"Retrying {key} once after a failed generation/quality check.", flush=True)
+                time.sleep(12)
         outcomes.append((key, label, sent))
-        time.sleep(1)  # brief pause to avoid burst-posting
+        time.sleep(4)  # avoid hitting AI and Telegram rate limits
     print("===== PUBLICATION SUMMARY =====")
     for key, label, sent in outcomes:
         print(f"{'SENT_AND_CHECKED' if sent else 'FAILED_OR_REJECTED'} | {key} | {label}", flush=True)
