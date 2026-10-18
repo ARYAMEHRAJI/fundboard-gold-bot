@@ -4,6 +4,8 @@ import os
 import re
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
 import json
 from pathlib import Path
@@ -101,12 +103,23 @@ def cloudflare_edit(source, label):
         payload = {"messages": messages, "max_tokens": max_tokens, "temperature": 0.1}
         req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=35) as response:
-            result = json.loads(response.read().decode("utf-8"))
-        answer = result.get("result", {}).get("response") or result.get("result", {}).get("output_text")
-        if not answer or not str(answer).strip():
-            raise RuntimeError("هوش مصنوعی متن قابل انتشار تولید نکرد؛ پیام ارسال نشد.")
-        return str(answer).strip()
+        last_error = None
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    result = json.loads(response.read().decode("utf-8"))
+                answer = result.get("result", {}).get("response") or result.get("result", {}).get("output_text")
+                if not answer or not str(answer).strip():
+                    raise RuntimeError("هوش مصنوعی متن قابل انتشار تولید نکرد؛ پیام ارسال نشد.")
+                return str(answer).strip()
+            except urllib.error.HTTPError as exc:
+                last_error = exc
+                if exc.code not in (429, 500, 502, 503, 504) or attempt == 3:
+                    raise
+                delay = 15 * (attempt + 1)
+                print(f"AI service temporarily unavailable (HTTP {exc.code}); retrying in {delay}s.")
+                time.sleep(delay)
+        raise last_error
 
     def sanitize(candidate):
         candidate = re.sub(r"(?i)https?://\\S+|خلاصه منبع[^\\n]*|منابع?:[^\\n]*", " ", candidate)
@@ -133,18 +146,37 @@ def cloudflare_edit(source, label):
             issues.append("لینک، منبع یا متن داخلی باقی مانده")
         if any((0x3400 <= ord(ch) <= 0x9FFF) or (0x3040 <= ord(ch) <= 0x30FF) or (0xAC00 <= ord(ch) <= 0xD7AF) or (0x0400 <= ord(ch) <= 0x052F) or (0x0900 <= ord(ch) <= 0x097F) for ch in candidate):
             issues.append("نویسه بیگانه باقی مانده")
+        if re.search(r"(?<![A-Za-z])[A-Za-z]{2,}(?![A-Za-z])", candidate):
+            issues.append("واژه انگلیسی باقی مانده")
         if len(candidate) < 450 or sum(1 for ch in candidate if 0x0600 <= ord(ch) <= 0x06FF) < 140:
             issues.append("تحلیل فارسی کافی نیست")
         if len(candidate) > 2900:
             issues.append("متن را به حداکثر ۲۹۰۰ نویسه کاهش بده")
-        if not re.search(r"[📊📉📈🥈🌍⚖️🧭💡⚠️📰🏭🔎]", candidate):
+        if not re.search(r"[📊📉📈🥈🌍⚖️🧭💡⚠️📰🏭🔎📚]", candidate):
             issues.append("ایموجی مرتبط اضافه کن")
+        # Prevent a source return such as -12.47% from being published as +12.47%.
+        def ascii_digits(value):
+            return value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")).replace("٫", ".")
+        source_norm = ascii_digits(source)
+        candidate_norm = ascii_digits(candidate).replace("٪", "%")
+        negative_returns = re.findall(r"(?<![\\d.])-(\\d+(?:[.,]\\d+)?)\\s*%", source_norm)
+        for number in negative_returns:
+            n = re.escape(number.replace(",", "."))
+            for match in re.finditer(n + r"\\s*%", candidate_norm):
+                before = candidate_norm[max(0, match.start()-28):match.start()]
+                after = candidate_norm[match.end():match.end()+32]
+                context = before + after
+                if not re.search(r"کاهش|افت|منفی|نزول|کمتر", context):
+                    issues.append("علامت منفی بازده در متن به‌اشتباه مثبت یا خنثی شده است")
+                    break
+            if issues and issues[-1] == "علامت منفی بازده در متن به‌اشتباه مثبت یا خنثی شده است":
+                break
         return issues
 
     text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
     text = sanitize(text)
     issues = quality_issues(text)
-    for attempt in range(1, 3):
+    for attempt in range(1, 2):
         if not issues:
             break
         repair_system = (
