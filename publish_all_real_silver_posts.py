@@ -15,7 +15,7 @@ CATEGORIES = [
 ]
 
 def main():
-    # Explicitly requested one-time restoration run: publish each existing content category once.
+    # Explicitly requested one-time restoration run: publish each existing content category once. Latest AI repair + resilient news-only generator.
     outcomes = []
     for key, label in CATEGORIES:
         env = os.environ.copy()
