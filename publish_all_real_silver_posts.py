@@ -35,7 +35,7 @@ def main():
                 and "BOLD_LINKED_FOOTER=true" in output
                 and "ERROR:" not in output)
         outcomes.append((key, label, sent))
-        time.sleep(1)
+        time.sleep(1)  # brief pause to avoid burst-posting
     print("===== PUBLICATION SUMMARY =====")
     for key, label, sent in outcomes:
         print(f"{'SENT_AND_CHECKED' if sent else 'FAILED_OR_REJECTED'} | {key} | {label}", flush=True)
