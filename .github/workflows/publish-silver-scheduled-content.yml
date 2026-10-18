@@ -1,12 +1,13 @@
-name: FundBoard Silver Scheduled Publications
+name: FundBoard Silver Hourly Publications
 
-# Temporarily manual-only while post quality and data validation are being corrected.
 on:
+  schedule:
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       content_type:
-        description: "Which single post type should be published"
-        required: true
+        description: "Post type (leave blank to select the next hourly category)"
+        required: false
         type: choice
         options:
           - technical
@@ -21,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fundboard-silver-scheduled-publications
+  group: fundboard-silver-hourly-publications
   cancel-in-progress: false
 
 jobs:
@@ -31,9 +32,9 @@ jobs:
     env:
       TELEGRAM_SILVER_BOT_TOKEN: ${{ secrets.TELEGRAM_SILVER_BOT_TOKEN }}
       TELEGRAM_SILVER_CHANNEL_ID: "@FundBoard_Silver"
-      SCHEDULE_KEY: ${{ inputs.content_type }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      ALLOW_REVIEWED_SILVER_PUBLICATION: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,5 +42,19 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: python -m pip install requests beautifulsoup4 openpyxl
-      - name: Generate and publish the scheduled post
+      - name: Select content category for this hour
+        id: category
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.content_type }}" ]; then
+            echo "key=${{ inputs.content_type }}" >> "$GITHUB_OUTPUT"
+          else
+            hour=$(date -u +%H)
+            index=$((10#$hour % 7))
+            categories=(technical news periodic comparison macro education briefing)
+            echo "key=${categories[$index]}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Generate and publish one Persian silver post
+        env:
+          SCHEDULE_KEY: ${{ steps.category.outputs.key }}
         run: python publish_silver_scheduled_content.py
