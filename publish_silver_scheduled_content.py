@@ -41,10 +41,34 @@ def run(command):
     print(f"RUN {' '.join(command)} -> {result.returncode}")
     if result.returncode:
         print(output[-1500:])
-        if command == ["publish_silver_prices.py"] and SCHEDULE == "briefing":
-            print("WARNING: قیمت‌های لحظه‌ای در این اجرا تأیید نشد؛ جمع‌بندی بدون قیمت تأییدنشده ساخته می‌شود.")
+        if SCHEDULE == "briefing":
+            stale_outputs = {
+                "publish_silver_prices.py": ["silver_content_preview/silver_prices.html"],
+                "generate_silver_technical_report.py": ["silver_content_preview/technical.html"],
+                "silver_content_suite.py": ["silver_content_preview/technical.html", "silver_content_preview/news_monitor.html", "silver_content_preview/silver_prices.html", "silver_content_preview/periodic_context.html"],
+                "generate_silver_periodic_report.py": ["silver_content_preview/periodic_returns.html"],
+                "generate_silver_macro_report.py": ["silver_content_preview/macro_report.html"],
+                "analyze_silver_news.py": ["silver_content_preview/news_analysis.html"],
+                "silver_specialist_posts.py": ["silver_content_preview/specialist_post.html"],
+                "generate_silver_gold_comparison.py": ["silver_gold_comparison_preview.html"],
+            }
+            for stale in stale_outputs.get(command[0], []):
+                Path(stale).unlink(missing_ok=True)
+            print(f"WARNING: {command[0]} failed; stale output removed and this section will be omitted.")
+            if command == ["silver_specialist_posts.py"] and "429" in output:
+                fallback = (
+                    "📚 چگونه نقره را برای سرمایه‌گذاری ارزیابی کنیم؟\n\n"
+                    "🥈 نقره هم فلزی گران‌بهاست و هم ماده‌ای صنعتی؛ بنابراین قیمت آن از تقاضای سرمایه‌گذاری، تولید صنعتی، "
+                    "عرضه معادن و شرایط مالی جهانی اثر می‌پذیرد.\n\n"
+                    "📊 برای ارزیابی روند، تغییر یک روز را از روند چندماهه جدا کنید. بازده مثبت کوتاه‌مدت به‌تنهایی پایان روند نزولی را ثابت نمی‌کند.\n\n"
+                    "⚖️ در ابزارهای بورسی، ساختار محصول، هزینه سالانه، نقدشوندگی و فاصله قیمت بازار با ارزش دارایی‌ها را بررسی کنید. "
+                    "محصول مبتنی بر قرارداد آتی الزاماً بازدهی برابر با نقره فیزیکی ندارد.\n\n"
+                    "🧭 سناریوی صعودی زمانی معتبرتر می‌شود که بهبود تقاضا با نشانه‌های قیمتی تأیید شود؛ ضعف تقاضا یا شرایط مالی انقباضی می‌تواند فشار نزولی ایجاد کند."
+                )
+                (OUT / "specialist_post.html").write_text(fallback, encoding="utf-8")
+                return fallback
             return ""
-        if command == ["silver_specialist_posts.py"] and "429" in output and SCHEDULE in ("education", "briefing"):
+        if command == ["silver_specialist_posts.py"] and "429" in output and SCHEDULE == "education":
             fallback = (
                 "<b>📚 چگونه نقره را برای سرمایه‌گذاری ارزیابی کنیم؟</b>\n\n"
                 "🥈 نقره هم فلزی گران‌بهاست و هم ماده‌ای پرکاربرد در صنعت؛ به همین دلیل، قیمت آن علاوه بر تقاضای سرمایه‌گذاری، "
@@ -275,6 +299,16 @@ def main():
         raise RuntimeError("Missing TELEGRAM_SILVER_BOT_TOKEN secret")
     job = JOBS[SCHEDULE]
     OUT.mkdir(parents=True, exist_ok=True)
+    if SCHEDULE == "briefing":
+        # Clear prior outputs first so the briefing never silently reuses stale prices or news.
+        for stale in [
+            "silver_content_preview/silver_prices.html", "silver_content_preview/technical.html",
+            "silver_content_preview/macro_report.html", "silver_content_preview/periodic_returns.html",
+            "silver_content_preview/news_analysis.html", "silver_content_preview/news_monitor.html",
+            "silver_content_preview/specialist_post.html", "silver_content_preview/periodic_context.html",
+            "silver_gold_comparison_preview.html", "silver_content_preview/daily_briefing.html",
+        ]:
+            Path(stale).unlink(missing_ok=True)
     command_outputs = []
     for command in job["commands"]:
         command_outputs.append(run(command))
