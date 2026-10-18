@@ -122,22 +122,43 @@ def cloudflare_edit(source, label):
         raise last_error
 
     def sanitize(candidate):
-        candidate = re.sub(r"(?i)https?://\\S+|خلاصه منبع[^\\n]*|منابع?:[^\\n]*", " ", candidate)
-        candidate = re.sub(r"(?i)\\b(iShares Silver Trust|abrdn Physical Silver Shares ETF|Sprott Physical Silver Trust|ETF|ETFs|FundBoard|Reuters|Bloomberg|Fed)\\b", lambda m: {
-            "ishares silver trust": "صندوق نقره", "abrdn physical silver shares etf": "صندوق نقره",
-            "sprott physical silver trust": "تراست نقره", "etf": "صندوق قابل معامله", "etfs": "صندوق‌های قابل معامله",
-            "fundboard": "فاندبورد", "reuters": "", "bloomberg": "", "fed": "فدرال رزرو"
-        }.get(m.group(0).lower(), ""), candidate, flags=re.I)
-        # Strip stray non-Persian scripts and any accidental English words, while preserving only essential tickers.
-        candidate = re.sub(r"[\\u3400-\\u4dbf\\u4e00-\\u9fff\\u3040-\\u30ff\\uac00-\\ud7af\\u0400-\\u052f\\u0900-\\u097f]+", " ", candidate)
-        allowed = {"SI=F": "قرارداد آتی نقره", "SLV": "صندوق نقره", "SIVR": "صندوق نقره", "PSLV": "تراست نقره", "RSI": "شاخص قدرت نسبی", "NAV": "ارزش خالص دارایی‌ها"}
-        tokens = re.findall(r"(?<![A-Za-z])[A-Za-z]+(?:=[A-Za-z])?(?![A-Za-z])", candidate)
-        for token in sorted(set(tokens), key=len, reverse=True):
-            replacement = allowed.get(token.upper(), "")
-            candidate = re.sub(r"(?<![A-Za-z])" + re.escape(token) + r"(?![A-Za-z])", replacement, candidate, flags=re.I)
-        candidate = re.sub(r"[ \\t]+", " ", candidate)
-        candidate = re.sub(r" *\\n *", "\\n", candidate)
-        candidate = re.sub(r"\\n{3,}", "\\n\\n", candidate)
+        # Translate frequent English abbreviations and company names, then remove any residual Latin fragments.
+        replacements = [
+            (r"(?i)abrdn\s+Physical\s+Silver\s+Shares\s+ETF", "صندوق قابل معامله نقره فیزیکی"),
+            (r"(?i)iShares\s+Silver\s+Trust", "صندوق نقره"),
+            (r"(?i)Sprott\s+Physical\s+Silver\s+Trust", "تراست نقره فیزیکی"),
+            (r"(?i)SI=F", "قرارداد آتی نقره"),
+            (r"(?i)SLV", "صندوق نقره"),
+            (r"(?i)SIVR", "صندوق نقره فیزیکی"),
+            (r"(?i)PSLV", "تراست نقره فیزیکی"),
+            (r"(?i)RSI(?:[- ]?14)?", "شاخص قدرت نسبی"),
+            (r"(?i)NAV", "ارزش خالص دارایی‌ها"),
+            (r"(?i)AUM", "ارزش دارایی‌های تحت مدیریت"),
+            (r"(?i)ETFs?|ETFها", "صندوق قابل معامله"),
+            (r"(?i)USD", "دلار آمریکا"),
+            (r"(?i)Yahoo Finance|Google News|FRED|Reuters|Bloomberg", " "),
+            (r"(?i)Federal Reserve|Fed", "بانک مرکزی آمریکا"),
+            (r"(?i)gold", "طلا"),
+            (r"(?i)silver", "نقره"),
+            (r"(?i)futures", "قراردادهای آتی"),
+            (r"(?i)diversification|diversify", "تنوع‌بخشی"),
+            (r"(?i)quá", "بیش‌ازحد"),
+            (r"影响گذار", "اثرگذار"),
+            (r"影响", "اثر"),
+            (r"可能", "ممکن است"),
+            (r"然而", "بااین‌حال"),
+            (r"城市", "شهرهای"),
+            (r"влияние", "اثر"),
+            (r"диверсификация", "تنوع‌بخشی"),
+        ]
+        candidate = re.sub(r"(?i)https?://\S+", " ", candidate)
+        for pattern, replacement in replacements:
+            candidate = re.sub(pattern, replacement, candidate)
+        # Strip any remaining non-Persian scripts and English fragments so raw headlines cannot leak.
+        candidate = re.sub(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u0400-\u052f\u0900-\u097f]+", " ", candidate)
+        candidate = re.sub(r"[A-Za-z][A-Za-z0-9]*(?:[=/-][A-Za-z0-9]+)?", " ", candidate)
+        candidate = "\n".join(" ".join(line.split()) for line in candidate.splitlines())
+        candidate = re.sub(r"\n{3,}", "\n\n", candidate)
         return candidate.strip()
 
     def quality_issues(candidate):
@@ -146,26 +167,25 @@ def cloudflare_edit(source, label):
             issues.append("لینک، منبع یا متن داخلی باقی مانده")
         if any((0x3400 <= ord(ch) <= 0x9FFF) or (0x3040 <= ord(ch) <= 0x30FF) or (0xAC00 <= ord(ch) <= 0xD7AF) or (0x0400 <= ord(ch) <= 0x052F) or (0x0900 <= ord(ch) <= 0x097F) for ch in candidate):
             issues.append("نویسه بیگانه باقی مانده")
-        if re.search(r"(?<![A-Za-z])[A-Za-z]{2,}(?![A-Za-z])", candidate):
+        if re.search(r"[A-Za-z]{2,}", candidate):
             issues.append("واژه انگلیسی باقی مانده")
-        if len(candidate) < 450 or sum(1 for ch in candidate if 0x0600 <= ord(ch) <= 0x06FF) < 140:
+        persian_count = sum(1 for ch in candidate if 0x0600 <= ord(ch) <= 0x06FF)
+        if len(candidate) < 450 or persian_count < 140:
             issues.append("تحلیل فارسی کافی نیست")
         if len(candidate) > 2900:
             issues.append("متن را به حداکثر ۲۹۰۰ نویسه کاهش بده")
         if not re.search(r"[📊📉📈🥈🌍⚖️🧭💡⚠️📰🏭🔎📚]", candidate):
             issues.append("ایموجی مرتبط اضافه کن")
-        # Prevent a source return such as -12.47% from being published as +12.47%.
+        # If a negative percentage from the raw data is reused, require a clear negative interpretation.
         def ascii_digits(value):
-            return value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")).replace("٫", ".")
+            return value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")).replace("٫", ".").replace("٪", "%")
         source_norm = ascii_digits(source)
-        candidate_norm = ascii_digits(candidate).replace("٪", "%")
-        negative_returns = re.findall(r"(?<![\\d.])-(\\d+(?:[.,]\\d+)?)\\s*%", source_norm)
+        candidate_norm = ascii_digits(candidate)
+        negative_returns = re.findall(r"(?<![0-9.])-([0-9]+(?:[.,][0-9]+)?) *%", source_norm)
         for number in negative_returns:
-            n = re.escape(number.replace(",", "."))
-            for match in re.finditer(n + r"\\s*%", candidate_norm):
-                before = candidate_norm[max(0, match.start()-28):match.start()]
-                after = candidate_norm[match.end():match.end()+32]
-                context = before + after
+            number = re.escape(number.replace(",", "."))
+            for match in re.finditer(number + r" *%", candidate_norm):
+                context = candidate_norm[max(0, match.start()-35):match.end()+35]
                 if not re.search(r"کاهش|افت|منفی|نزول|کمتر", context):
                     issues.append("علامت منفی بازده در متن به‌اشتباه مثبت یا خنثی شده است")
                     break
@@ -187,8 +207,8 @@ def cloudflare_edit(source, label):
             'خروجی فقط متن نهایی قابل انتشار باشد.'
         )
         repair_user = (
-            f'دسته محتوا: {label}\\nایرادهای لازم برای رفع: {"؛ ".join(issues)}\\n'
-            f'داده‌های خام برای کنترل صحت: {source[:9000]}\\nمتن نیازمند اصلاح: {text}\\n'
+            f'دسته محتوا: {label}\nایرادهای لازم برای رفع: {"؛ ".join(issues)}\n'
+            f'داده‌های خام برای کنترل صحت: {source[:9000]}\nمتن نیازمند اصلاح: {text}\n'
             'بازنویسی کن و قبل از پاسخ، نبودن کلمات بیگانه و حفظ علامت بازده‌ها را کنترل کن.'
         )
         text = ask([{'role': 'system', 'content': repair_system}, {'role': 'user', 'content': repair_user}], 1400)
