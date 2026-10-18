@@ -29,12 +29,16 @@ def main():
         output = (result.stdout or "") + (result.stderr or "")
         print(f"===== {label} [{key}] exit={result.returncode} =====")
         print(output[-5000:])
-        sent = "Published " in output and result.returncode == 0
+        sent = ("Published " in output and result.returncode == 0
+                and "AI_REWRITTEN=true" in output
+                and "PERSIAN_ONLY_CHECK=passed" in output
+                and "BOLD_LINKED_FOOTER=true" in output
+                and "ERROR:" not in output)
         outcomes.append((key, label, sent))
         time.sleep(3)
     print("===== PUBLICATION SUMMARY =====")
     for key, label, sent in outcomes:
-        print(f"{'SENT' if sent else 'FAILED'} | {key} | {label}")
+        print(f"{'SENT_AND_CHECKED' if sent else 'FAILED_OR_REJECTED'} | {key} | {label}")
     if not all(item[2] for item in outcomes):
         raise RuntimeError("Some real silver content categories could not be published; see logs.")
 
