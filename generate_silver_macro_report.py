@@ -26,33 +26,45 @@ def latest(text):
  if age<0 or age>10: raise ValueError(f"stale or future FRED observation ({age} days)")
  return d.isoformat(),v,age
 def main():
- OUT.parent.mkdir(parents=True,exist_ok=True); now=datetime.now(ZoneInfo("Asia/Tehran"))
- lines=["🌐 فاندبورد نقره | عوامل کلان و بنیادی بازار",f"زمان گزارش تهران: {now:%Y-%m-%d %H:%M}","",
- "📌 داده‌های اقتصاد کلان (منبع FRED؛ هر مشاهده تاریخ مستقل دارد)"]
+ OUT.parent.mkdir(parents=True,exist_ok=True)
+ now=datetime.now(ZoneInfo("Asia/Tehran"))
+ lines=["🌍 داده‌های بنیادی و اقتصاد کلان مؤثر بر نقره",f"تاریخ گزارش تهران: {now:%Y/%m/%d}",""]
  ok=0
  for sid,label in SERIES.items():
   try:
-   d,v,age=latest(get(FRED.format(sid))); lines.append(f"• {label}: {v:.3f}؛ تاریخ داده {d} (قدمت {age} روز)");ok+=1
-  except Exception as e: lines.append(f"• {label}: داده معتبر در دسترس نیست ({type(e).__name__})")
- lines += ["","🧭 چارچوب تفسیر","• دلار قوی‌تر و افزایش نرخ‌های واقعی می‌تواند هزینه فرصت نگهداری فلزات بدون بازده را بالا ببرد؛ رابطه قطعی و همیشگی نیست.",
- "• برای نقره، تقاضای صنعتی و عرضه معادن/بازیافت در کنار عوامل مالی مهم‌اند؛ خبر یک صنعت به‌تنهایی جهت قیمت را تعیین نمی‌کند.","",
- "📰 اخبار مرتبط با عرضه و تقاضا (تا ۳۰ روز اخیر)"]
+   d,v,age=latest(get(FRED.format(sid)))
+   lines.append(f"• **{label}:** {v:.3f} درصد؛ تاریخ مشاهده {d}")
+   ok+=1
+  except Exception:
+   # Omit missing or stale series; do not publish exception strings.
+   continue
+ lines += ["","📰 خبرهای تازه درباره عرضه و تقاضای نقره"]
  try:
   root=ET.fromstring(get(RSS)); items=[]; seen=set()
   for item in root.findall(".//item"):
-   title=(item.findtext("title") or "").strip(); link=(item.findtext("link") or "").strip(); raw=(item.findtext("pubDate") or "").strip()
+   title=(item.findtext("title") or "").strip()
+   raw=(item.findtext("pubDate") or "").strip()
+   summary=ET.tostring(item,encoding="unicode",method="xml")
    try:
     dt=parsedate_to_datetime(raw)
-    if dt.tzinfo is None:dt=dt.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
     age=(datetime.now(timezone.utc)-dt.astimezone(timezone.utc)).total_seconds()/86400
-   except Exception:continue
-   if title and link.startswith("https://") and -1<=age<=30 and title.casefold() not in seen:
-    seen.add(title.casefold());items.append((dt,title,link))
-  for dt,title,link in sorted(items,reverse=True)[:6]: lines.append(f"• {dt:%Y-%m-%d}: {title} — {link}")
-  if not items:lines.append("خبر واجد شرایطی پیدا نشد؛ این به معنی نبود خبر مرتبط نیست.")
- except Exception as e:lines.append(f"دریافت خبر ناموفق بود: {type(e).__name__}")
- lines += ["","منابع: FRED series "+", ".join(SERIES)+ "؛ Google News RSS برای کشف خبر (نه منبع آمار قطعی).",
- "اطلاعات ذخایر و جریان ETFها فقط با انتشار رسمی و تاریخ‌دار قابل گزارش است؛ در نبود آن عددی تخمین زده نمی‌شود.",
- "این گزارش زمینه تحلیلی است و سیگنال قطعی خریدوفروش نیست.","Dry-run only: no Telegram message was sent."]
- report="\n".join(lines);OUT.write_text(report,encoding="utf-8");print(report);print(f"FRED_SERIES_OK: {ok}/{len(SERIES)}");print("TELEGRAM_MESSAGES_SENT: 0")
+   except Exception: continue
+   normalized=title.casefold()
+   if not title or not (-1<=age<=30) or normalized in seen: continue
+   if not any(term in (title+" "+summary).casefold() for term in ("silver","solar","mine","mining","supply","demand","production")): continue
+   if any(term in (title+" "+summary).casefold() for term in ("india silver rate","vietnam silver price","bundi silver","kolkata silver","delhi silver","mumbai silver")): continue
+   seen.add(normalized); items.append((dt,title))
+  for dt,title in sorted(items,reverse=True)[:4]:
+   lines.append(f"• تاریخ {dt:%Y-%m-%d}: {title}")
+ except Exception:
+  pass
+ if ok==0 and len(lines)<=4:
+  raise SystemExit("داده بنیادی معتبر یا خبر مرتبط دریافت نشد؛ انتشار متوقف شد.")
+ report="\n".join(lines).strip()
+ OUT.write_text(report,encoding="utf-8")
+ print(report)
+ print(f"MACRO_SERIES_OK: {ok}/{len(SERIES)}")
+ print("TELEGRAM_MESSAGES_SENT: 0")
+
 if __name__=="__main__":main()
