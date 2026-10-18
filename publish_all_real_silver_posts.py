@@ -1,4 +1,4 @@
-"""Publish the seven editorially cleaned Persian silver content categories once."""
+"""Publish all seven AI-rewritten, Persian-only FundBoard Silver categories once with the required linked footer."""
 import os
 import subprocess
 import sys
