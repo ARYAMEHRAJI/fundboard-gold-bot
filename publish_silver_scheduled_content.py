@@ -38,6 +38,9 @@ def run(command):
     print(f"RUN {' '.join(command)} -> {result.returncode}")
     if result.returncode:
         print((result.stderr or result.stdout)[-1500:])
+        if command == ["publish_silver_prices.py"] and SCHEDULE == "briefing":
+            print("WARNING: قیمت‌های لحظه‌ای در این اجرا تأیید نشد؛ جمع‌بندی بدون قیمت تأییدنشده ساخته می‌شود.")
+            return ""
         raise RuntimeError(f"Generator failed: {' '.join(command)}")
     return result.stdout
 
@@ -86,44 +89,45 @@ def cloudflare_edit(source, label):
 
     def quality_issues(candidate):
         issues = []
-        if re.search(r"(?i)https?://|خلاصه منبع|پیش.?نمایش|پیامی ارسال نشد|no telegram message|dry.?run|منابع:", candidate):
-            issues.append("هیچ منبع، لینک، نام رسانه یا متن داخلی نیاور")
-        forbidden_ranges = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0x3040, 0x30FF), (0xAC00, 0xD7AF),
-                            (0x0400, 0x052F), (0x0900, 0x097F))
+        if re.search(r'(?i)https?://|خلاصه منبع|پیش.?نمایش|پیامی ارسال نشد|no telegram message|dry.?run|منابع:', candidate):
+            issues.append('لینک، نام رسانه، منبع یا متن داخلی را حذف کن')
+        forbidden_ranges = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0x3040, 0x30FF), (0xAC00, 0xD7AF), (0x0400, 0x052F), (0x0900, 0x097F))
         if any(lo <= ord(ch) <= hi for ch in candidate for lo, hi in forbidden_ranges):
-            issues.append("تمام واژه‌ها و نویسه‌های چینی، ژاپنی، کره‌ای، روسی و هندی را به فارسی طبیعی برگردان")
-        latin_words = re.findall(r"(?<![A-Za-z])[A-Za-z]+(?:=[A-Za-z])?(?![A-Za-z])", candidate)
-        allowed_terms = {"SI=F", "SLV", "SIVR", "PSLV", "RSI", "NAV"}
+            issues.append('همه نویسه‌ها و کلمات چینی، ژاپنی، کره‌ای، روسی و هندی را به فارسی روان تبدیل کن')
+        latin_words = re.findall(r'(?<![A-Za-z])[A-Za-z]+(?:=[A-Za-z])?(?![A-Za-z])', candidate)
+        allowed_terms = {'SI=F', 'SLV', 'SIVR', 'PSLV', 'RSI', 'NAV'}
         if any(word.upper() not in allowed_terms for word in latin_words):
-            issues.append("تمام واژه‌های انگلیسی را فارسی کن؛ فقط نماد ضروری SI=F، SLV، SIVR، PSLV، RSI و NAV مجازند")
-        if len(candidate) < 650 or sum(1 for ch in candidate if 0x0600 <= ord(ch) <= 0x06FF) < 180:
-            issues.append("تحلیل فارسی را به اندازه کافی گسترش بده و ۳ تا ۵ پاراگراف تحلیلی بنویس")
-        if len(candidate) > 3100:
-            issues.append("متن را به حداکثر ۳۱۰۰ نویسه کاهش بده و تحلیل‌های تکراری را حذف کن")
-        if re.search(r"(?i)\b(quá|diversification|ETF)\b|可能|影响", candidate):
-            issues.append("اصطلاحات بیگانه را کاملاً به فارسی طبیعی تبدیل کن")
+            issues.append('هیچ کلمه انگلیسی باقی نگذار؛ فقط نماد ضروری SI=F، SLV، SIVR، PSLV، RSI و NAV مجازند و باید فارسی توضیح داده شوند')
+        if len(candidate) < 500 or sum(1 for ch in candidate if 0x0600 <= ord(ch) <= 0x06FF) < 150:
+            issues.append('تحلیل را با ۳ تا ۵ پاراگراف فارسی و داده‌محور کامل کن')
+        if len(candidate) > 2900:
+            issues.append('متن را به حداکثر ۲۹۰۰ نویسه برسان و تکرارها را حذف کن')
+        if re.search(r'(?i)\\b(quá|diversification|ETF)\\b|可能|影响|влияние', candidate):
+            issues.append('واژه‌های بیگانه را به فارسی طبیعی برگردان')
+        if not re.search(r'[📊📉📈🥈🌍⚖️🧭💡⚠️📰🏭🔎]', candidate):
+            issues.append('از چند ایموجی مرتبط و به‌جا استفاده کن')
         return issues
-
-    text = ask([{"role": "system", "content": system}, {"role": "user", "content": user}])
+    text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
     issues = quality_issues(text)
-    if issues:
+    for attempt in range(1, 4):
+        if not issues:
+            break
         repair_system = (
-            "تو ویراستار نهایی سخت‌گیر کانال مالی فارسی هستی. متن نامناسب را اصلاح کن. "
-            "همه نویسه‌های چینی/ژاپنی/کره‌ای/روسی/هندی و واژه‌های انگلیسی را به فارسی روان تبدیل کن؛ "
-            "هیچ منبع، نام رسانه، لینک یا متن داخلی نیاور. تیتر و چند نکته کلیدی باید برجسته‌پذیر باشند، "
-            "چند ایموجی مرتبط به‌جا استفاده کن. اعداد و به‌ویژه علامت مثبت/منفی بازده‌ها را تغییر نده، "
-            "هیچ داده‌ای نساز و تحلیل را حرفه‌ای نگه دار. خروجی فقط متن نهایی باشد."
+            'تو ویراستار نهایی یک کانال مالی فارسی هستی. نسخه نهایی را کاملاً به فارسی معیار بنویس. '
+            'هیچ واژه یا نویسه چینی، ژاپنی، کره‌ای، روسی، هندی یا انگلیسی باقی نگذار، جز نمادهای مجاز در صورت ضرورت. '
+            'متن را طبیعی و حرفه‌ای کن، ایموجی‌های مرتبط و محدود داشته باش، تیتر و نکات کلیدی روشن باشند. '
+            'منبع، رسانه، لینک، متن داخلی یا پیش‌نمایش ننویس. عدد، واحد، تاریخ و علامت مثبت/منفی داده‌ها را عوض نکن و هیچ واقعیتی نساز. '
+            'خروجی فقط متن نهایی قابل انتشار باشد.'
         )
         repair_user = (
-            f"دسته: {label}\nایرادهای شناسایی‌شده: {'؛ '.join(issues)}\n"
-            f"داده‌های اصلی برای کنترل دقت:\n{source[:12000]}\n\n"
-            f"متن نیازمند اصلاح:\n{text}\n\n"
-            "متن را کامل اصلاح کن و فقط نسخه نهایی را برگردان."
+            f'دسته محتوا: {label}\\nایرادهای لازم برای رفع: {"؛ ".join(issues)}\\n'
+            f'داده‌های خام برای کنترل صحت: {source[:9000]}\\nمتن نیازمند اصلاح: {text}\\n'
+            'بازنویسی کن و قبل از پاسخ، نبودن کلمات بیگانه و حفظ علامت بازده‌ها را کنترل کن.'
         )
-        text = ask([{"role": "system", "content": repair_system}, {"role": "user", "content": repair_user}], 1200)
+        text = ask([{'role': 'system', 'content': repair_system}, {'role': 'user', 'content': repair_user}], 1400)
         issues = quality_issues(text)
     if issues:
-        raise RuntimeError("خروجی پس از یک دور اصلاح هنوز از کنترل کیفیت عبور نکرد؛ انتشار امن متوقف شد: " + "؛ ".join(issues))
+        raise RuntimeError('متن پس از سه مرحله بازبینی از کنترل کیفیت عبور نکرد؛ برای جلوگیری از انتشار محتوای خراب متوقف شد: ' + '؛ '.join(issues))
     return text
 
 def html_format(text, label):
