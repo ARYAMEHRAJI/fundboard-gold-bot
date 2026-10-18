@@ -11,7 +11,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 TIMEOUT = 35
-MAX_AGE_HOURS = 36
+MAX_AGE_HOURS = 72
 MAX_ARTICLES = 8
 QUERY = '("silver price" OR "silver demand" OR "silver supply" OR "silver mine" OR "silver production" OR "solar silver" OR "Silver Institute") when:3d -India -Vietnam -Bundi -Kolkata -Delhi -Mumbai'
 RSS_URL = "https://news.google.com/rss/search?" + urllib.parse.urlencode({"q": QUERY, "hl": "en-US", "gl": "US", "ceid": "US:en"})
