@@ -113,11 +113,12 @@ def html_format(text, label):
         lines.pop(0)
     if not lines:
         raise RuntimeError("متن نهایی پس از پاک‌سازی خالی است.")
-    # Bold the post headline, plus key analytical lines and metric labels.
-    if lines and lines[0].strip(" #*") == label:
-        lines.pop(0)
-    out = [f"<b>{html.escape('📊 ' + label)}</b>", ""]
-    first_content = True
+    # Keep the AI-written headline, bold it, and format useful lead-ins.
+    headline = lines.pop(0).strip(" #*") if lines else label
+    if not headline:
+        headline = label
+    out = [f"<b>{html.escape(headline, quote=False)}</b>", ""]
+    first_content = False
     for line in lines:
         if not line:
             out.append("")
@@ -126,7 +127,7 @@ def html_format(text, label):
         if first_content:
             safe = f"<b>{safe}</b>"
             first_content = False
-        elif re.match(r"^(🔎|🧭|📌|📈|📉|⚖️|💡|سناریوی مثبت|سناریوی منفی|جمع‌بندی تحلیلی|برداشت تحلیلی|نتیجه‌گیری|نکته کلیدی|مهم‌ترین نکته)", line):
+        elif re.match(r"^(🔎|🧭|📌|📈|📉|⚖️|💡|🌍|🥈|⚠️|سناریوی مثبت|سناریوی منفی|جمع‌بندی تحلیلی|برداشت تحلیلی|نتیجه‌گیری|نکته کلیدی|مهم‌ترین نکته|چرا مهم است|چه چیزی را باید رصد کرد)", line):
             safe = f"<b>{safe}</b>"
         else:
             safe = re.sub(r"^([•▪🔹-]\s*[^:：]{2,35}[:：])", r"<b>\1</b>", safe)
