@@ -96,39 +96,35 @@ def cloudflare_edit(source, label):
     return text
 
 def html_format(text, label):
-    # Remove any footer or duplicate generic headings returned by the model.
     lines = []
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
-            if lines and lines[-1] != "":
-                lines.append("")
+            if lines and lines[-1] != '': lines.append('')
             continue
-        if "FundBoard_Silver" in line or "فاندبورد نقره" in line and len(line) < 60:
-            continue
-        if re.search(r"(?i)https?://|خلاصه منبع|پیش.?نمایش|dry.?run|منابع:", line):
-            continue
+        if 'FundBoard_Silver' in line or ('فاندبورد نقره' in line and len(line) < 70): continue
+        if re.search(r'(?i)https?://|خلاصه منبع|پیش.?نمایش|dry.?run|منابع:', line): continue
+        if any((0x3400 <= ord(ch) <= 0x4DBF) or (0x4E00 <= ord(ch) <= 0x9FFF) or (0x3040 <= ord(ch) <= 0x30FF) or (0xAC00 <= ord(ch) <= 0xD7AF) for ch in line):
+            raise RuntimeError('نویسه چینی/ژاپنی/کره‌ای شناسایی شد؛ انتشار متوقف شد.')
         lines.append(line)
-    while lines and not lines[0].strip():
-        lines.pop(0)
-    if not lines:
-        raise RuntimeError("متن نهایی پس از پاک‌سازی خالی است.")
-    # Keep the AI-written headline, bold it, and format useful lead-ins.
-    headline = lines.pop(0).strip(" #*") if lines else label
-    if not headline:
-        headline = label
-    out = [f"<b>{html.escape(headline, quote=False)}</b>", ""]
+    while lines and not lines[0].strip(): lines.pop(0)
+    if not lines: raise RuntimeError('متن نهایی پس از پاک‌سازی خالی است.')
+    headline = lines.pop(0).strip(' #*') or label
+    if headline == label: headline = '📊 ' + label
+    out = [f'<b>{html.escape(headline, quote=False)}</b>', '']
+    important = re.compile(r'^(🔎|🧭|📌|📈|📉|⚖️|💡|🌍|🥈|⚠️|📰|🏭|📉|سناریوی مثبت|سناریوی منفی|جمع‌بندی|برداشت تحلیلی|نتیجه‌گیری|نکته کلیدی|مهم‌ترین نکته|چرا مهم است|چه چیزی را باید رصد کرد)')
+    metric = re.compile(r'^([•▪🔹-]\\s*[^:：]{2,35}[:：])')
     for line in lines:
-        if not line:
-            out.append("")
-            continue
+        if not line: out.append(''); continue
         safe = html.escape(line, quote=False)
-        if re.match(r"^(🔎|🧭|📌|📈|📉|⚖️|💡|🌍|🥈|⚠️|سناریوی مثبت|سناریوی منفی|جمع‌بندی تحلیلی|برداشت تحلیلی|نتیجه‌گیری|نکته کلیدی|مهم‌ترین نکته|چرا مهم است|چه چیزی را باید رصد کرد)", line):
-            safe = f"<b>{safe}</b>"
+        if important.match(line): safe = f'<b>{safe}</b>'
         else:
-            safe = re.sub(r"^([•▪🔹-]\s*[^:：]{2,35}[:：])", r"<b>\1</b>", safe)
+            safe = metric.sub(r'<b>\\1</b>', safe)
+            safe = re.sub(r'^(نکته مهم|در سناریوی صعودی|در سناریوی نزولی|ریسک اصلی|جمع‌بندی نهایی)(:)', r'<b>\\1\\2</b>', safe)
         out.append(safe)
-    return "\n".join(out).strip()
+    result = '\\n'.join(out).strip()
+    if len(result) > MAX_LEN: raise RuntimeError('متن تحلیل از حد مجاز تلگرام بلندتر است؛ انتشار متوقف شد.')
+    return result
 
 def split(text):
     # Split only on line boundaries; Telegram HTML parse mode is enabled for every part.
