@@ -85,11 +85,13 @@ def cloudflare_edit(source, label):
     # Never allow source lists, URLs, raw English news headlines, or preview/debug artifacts through.
     if re.search(r"(?i)https?://|خلاصه منبع|پیش.?نمایش|پیامی ارسال نشد|no telegram message|dry.?run|منابع:", text):
         raise RuntimeError("بازبینی خودکار خروجی هوش مصنوعی ناموفق بود؛ پیام ارسال نشد.")
-    if sum(1 for ch in text if 0x0600 <= ord(ch) <= 0x06FF) < 120:
+    if any((0x3400 <= ord(ch) <= 0x4DBF) or (0x4E00 <= ord(ch) <= 0x9FFF) or (0x3040 <= ord(ch) <= 0x30FF) or (0xAC00 <= ord(ch) <= 0xD7AF) for ch in text):
+        raise RuntimeError("خروجی دارای نویسه چینی/ژاپنی/کره‌ای است؛ پیام ارسال نشد.")
+    if sum(1 for ch in text if 0x0600 <= ord(ch) <= 0x06FF) < 180:
         raise RuntimeError("خروجی هوش مصنوعی تحلیل فارسی کافی ندارد؛ پیام ارسال نشد.")
     latin = sum(1 for ch in text if "a" <= ch.lower() <= "z")
     persian = sum(1 for ch in text if 0x0600 <= ord(ch) <= 0x06FF)
-    if latin > max(35, persian * 0.18):
+    if latin > max(24, persian * 0.12):
         raise RuntimeError("در خروجی هوش مصنوعی متن لاتین بیش از حد مجاز است؛ پیام ارسال نشد.")
     return text
 
@@ -112,6 +114,8 @@ def html_format(text, label):
     if not lines:
         raise RuntimeError("متن نهایی پس از پاک‌سازی خالی است.")
     # Bold the post headline, plus key analytical lines and metric labels.
+    if lines and lines[0].strip(" #*") == label:
+        lines.pop(0)
     out = [f"<b>{html.escape('📊 ' + label)}</b>", ""]
     first_content = True
     for line in lines:
@@ -166,17 +170,17 @@ def main():
         raise RuntimeError(f"Generated output missing or empty: {file_path}")
     edited = cloudflare_edit(raw, job["label"])
     body = html_format(edited, job["label"])
-    chunks = split(body)
+    if len(body) > MAX_LEN:
+        raise RuntimeError("متن طولانی‌تر از حد مجاز است؛ انتشار متوقف شد تا متن ناقص ارسال نشود.")
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    for i, chunk in enumerate(chunks, 1):
-        message = f"{chunk}\n\n{FOOTER}"
-        response = requests.post(url, json={"chat_id": CHANNEL, "text": message, "parse_mode": "HTML",
-            "disable_web_page_preview": True}, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok"):
-            raise RuntimeError("Telegram did not confirm message delivery")
-        print(f"Published {job['label']} to {CHANNEL}; message_id={data['result']['message_id']}")
+    message = f"{body}\n\n{FOOTER}"
+    response = requests.post(url, json={"chat_id": CHANNEL, "text": message, "parse_mode": "HTML",
+        "disable_web_page_preview": True}, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+    if not data.get("ok"):
+        raise RuntimeError("Telegram did not confirm message delivery")
+    print(f"Published {job['label']} to {CHANNEL}; message_id={data['result']['message_id']}")
     print(f"SUCCESS: {SCHEDULE}; AI_REWRITTEN=true; PERSIAN_ONLY_CHECK=passed; BOLD_LINKED_FOOTER=true")
 
 if __name__ == "__main__":
