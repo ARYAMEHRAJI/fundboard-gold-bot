@@ -68,6 +68,34 @@ def parse_page(name, url, unit, kind):
         if match:
             price = float(match.group(1).replace(",", ""))
             break
+
+    # TGJU occasionally changes the label used for the current quote. As a fallback,
+    # inspect the table row for the requested instrument rather than guessing from the whole page.
+    if price is None:
+        aliases = {
+            "global": ("انس جهانی نقره", "انس نقره"),
+            "local": ("نقره 999", "نقره 925"),
+            "currency": ("دلار آزاد", "دلار"),
+        }.get(kind, ())
+        for row in soup.find_all("tr"):
+            row_text = normalize_digits(row.get_text(" ", strip=True))
+            if not any(alias.casefold() in row_text.casefold() for alias in aliases):
+                continue
+            values = re.findall(r"(?<![A-Za-z])([0-9][0-9,]*(?:\\.[0-9]+)?)", row_text)
+            for raw_value in values:
+                candidate = float(raw_value.replace(",", ""))
+                if kind == "global" and 10 <= candidate <= 200:
+                    price = candidate
+                    break
+                if kind == "local" and candidate >= 1000:
+                    price = candidate
+                    break
+                if kind == "currency" and candidate >= 100000:
+                    price = candidate
+                    break
+            if price is not None:
+                break
+
     if price is None or price <= 0:
         raise RuntimeError(f"قیمت معتبر برای {name} از منبع دریافت نشد؛ انتشار متوقف شد.")
 
