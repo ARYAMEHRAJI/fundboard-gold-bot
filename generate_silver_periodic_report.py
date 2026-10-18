@@ -53,7 +53,7 @@ def main():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     now = datetime.now(TEHRAN)
     lines = ["📈 بازدهی نقره در بازه‌های زمانی مختلف",
-             f"تاریخ گزارش به وقت تهران: {fa(now:%Y/%m/%d)}", ""]
+             f"تاریخ گزارش به وقت تهران: {fa(now.strftime('%Y/%m/%d'))}", ""]
     successes = 0
     for symbol, label in SYMBOLS.items():
         try:
