@@ -105,7 +105,20 @@ def polish_body(body, schedule):
             continue
         if "http://" in low or "https://" in low:
             continue
-        if "حالت آزمایشی:" in line or "پیامی ارسال نشد" in line:
+        if any(term in low for term in [
+            "حالت آزمایشی:", "پیامی ارسال نشد", "این فایل پیش‌نمایش",
+            "گزارش ترکیبی صرفاً پیش‌نمایش", "هیچ پیامی به تلگرام ارسال نشده",
+            "گزارش ترکیبی صرفاً پیش نمایش", "داشبورد سرمایه‌گذاری شما",
+        ]):
+            continue
+        # Raw English headlines and source-attribution rows are not publishable Persian analysis.
+        if line.startswith("خلاصه منبع:"):
+            continue
+        if line.startswith("•") and any(word in low for word in ["financefeeds", "silvertrade", "fxstreet", "business today", "captainaltcoin"]):
+            continue
+        persian_letters = sum(1 for ch in line if 0x0600 <= ord(ch) <= 0x06FF)
+        latin_letters = sum(1 for ch in line if ("a" <= ch.lower() <= "z"))
+        if latin_letters >= 18 and latin_letters > persian_letters:
             continue
         if line.startswith("@FundBoard_Silver") or line.startswith("فاندبورد نقره |"):
             continue
