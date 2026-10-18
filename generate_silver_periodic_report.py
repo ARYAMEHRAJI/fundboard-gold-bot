@@ -61,7 +61,9 @@ def main():
             successes += 1
             latest_time, latest = rows[-1]
             lines.append(f"🥈 **{label}**")
-            lines.append(f"آخرین قیمت پایانی در {fa(latest_time:%Y/%m/%d)}: **{fa(f'{latest:,.4f}')} دلار**")
+            latest_date = fa(latest_time.strftime("%Y/%m/%d"))
+            latest_price = fa(f"{latest:,.4f}")
+            lines.append(f"آخرین قیمت پایانی در {latest_date}: **{latest_price} دلار**")
             for name, n in PERIODS:
                 if len(rows) > n:
                     old_time, old = rows[-1-n]
