@@ -190,7 +190,7 @@ def cloudflare_edit(source, label):
             issues.append("متن را به حداکثر ۲۷۰۰ نویسه کاهش بده")
         if not re.search(r"[📊📉📈🥈🌍⚖️🧭💡📰🏭🔎📚💰]", candidate):
             issues.append("ایموجی مرتبط اضافه کن")
-        if not re.search(r"(?m)^\s*[*#]?[📊📉📈🥈🌍⚖️🧭💡📰🏭🔎📚💰]", candidate):
+        if not re.search(r"(?m)^\s*(?:\*\*)?[*#]?[📊📉📈🥈🌍⚖️🧭💡📰🏭🔎📚💰]", candidate):
             issues.append("تیتر فارسی مشخص با ایموجی در ابتدای متن وجود ندارد")
         if candidate.count("**") % 2:
             issues.append("قالب بولد ناقص است")
@@ -282,8 +282,8 @@ def html_format(text, label):
         if not line: out.append(""); continue
         safe = html.escape(line, quote=False)
         safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe)
-        if important.match(line) and not safe.startswith("<b>"): safe = f"<b>{safe}</b>"
-        else: safe = metric.sub(r"<b>\1</b>", safe)
+        if important.match(line) and not safe.startswith("<b>") and "<b>" not in safe: safe = f"<b>{safe}</b>"
+        elif "<b>" not in safe: safe = metric.sub(r"<b>\1</b>", safe)
         out.append(safe)
     result = "\n".join(out).strip()
     if len(result) > MAX_LEN: raise RuntimeError("متن تحلیل از حد مجاز تلگرام بلندتر است؛ انتشار متوقف شد.")
