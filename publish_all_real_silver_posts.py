@@ -1,4 +1,4 @@
-"""Publish all seven AI-rewritten, Persian-only FundBoard Silver categories once with the required linked footer."""
+"""Publish all seven AI-rewritten, Persian-only FundBoard Silver categories once with the required linked footer. Latest revision only."""
 import os
 import subprocess
 import sys
