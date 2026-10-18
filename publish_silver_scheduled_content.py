@@ -73,34 +73,57 @@ def cloudflare_edit(source, label):
         "خروجی فقط متن نهایی قابل انتشار باشد؛ هیچ مقدمه‌ای درباره کاری که انجام داده‌ای ننویس."
     )
     user = f"دسته محتوا: {label}\n\nمتن خام و داده‌های موجود:\n{source[:18000]}\n\nیک پست نهایی فارسی و تحلیلی تولید کن."
-    payload = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": user}], "max_tokens": 1200, "temperature": 0.15}
-    req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=100) as response:
-        result = json.loads(response.read().decode("utf-8"))
-    text = result.get("result", {}).get("response") or result.get("result", {}).get("output_text")
-    if not text or not str(text).strip():
-        raise RuntimeError("هوش مصنوعی متن قابل انتشار تولید نکرد؛ پیام ارسال نشد.")
-    text = str(text).strip()
-    # Never allow source lists, URLs, raw English news headlines, or preview/debug artifacts through.
-    if re.search(r"(?i)https?://|خلاصه منبع|پیش.?نمایش|پیامی ارسال نشد|no telegram message|dry.?run|منابع:", text):
-        raise RuntimeError("بازبینی خودکار خروجی هوش مصنوعی ناموفق بود؛ پیام ارسال نشد.")
-    forbidden_ranges = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0x3040, 0x30FF), (0xAC00, 0xD7AF),
-                        (0x0400, 0x052F), (0x0900, 0x097F))
-    if any(lo <= ord(ch) <= hi for ch in text for lo, hi in forbidden_ranges):
-        raise RuntimeError("خروجی دارای نویسه غیر فارسی ناخواسته است؛ پیام ارسال نشد.")
-    latin_words = re.findall(r"(?<![A-Za-z])[A-Za-z]+(?:=[A-Za-z])?(?![A-Za-z])", text)
-    allowed_terms = {"SI=F", "SLV", "SIVR", "PSLV", "RSI", "NAV"}
-    if any(word.upper() not in allowed_terms for word in latin_words):
-        raise RuntimeError("خروجی دارای واژه انگلیسی غیرمجاز است؛ پیام ارسال نشد.")
-    if re.search(r"\b(quá|可能|影响|diversification|ETF)\b", text, re.IGNORECASE):
-        raise RuntimeError("خروجی دارای واژه بیگانه یا اصطلاح ترجمه‌نشده است؛ پیام ارسال نشد.")
-    if sum(1 for ch in text if 0x0600 <= ord(ch) <= 0x06FF) < 180:
-        raise RuntimeError("خروجی هوش مصنوعی تحلیل فارسی کافی ندارد؛ پیام ارسال نشد.")
-    latin = sum(1 for ch in text if "a" <= ch.lower() <= "z")
-    persian = sum(1 for ch in text if 0x0600 <= ord(ch) <= 0x06FF)
-    if latin > max(24, persian * 0.12):
-        raise RuntimeError("در خروجی هوش مصنوعی متن لاتین بیش از حد مجاز است؛ پیام ارسال نشد.")
+    def ask(messages, max_tokens=1200):
+        payload = {"messages": messages, "max_tokens": max_tokens, "temperature": 0.1}
+        req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=75) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        answer = result.get("result", {}).get("response") or result.get("result", {}).get("output_text")
+        if not answer or not str(answer).strip():
+            raise RuntimeError("هوش مصنوعی متن قابل انتشار تولید نکرد؛ پیام ارسال نشد.")
+        return str(answer).strip()
+
+    def quality_issues(candidate):
+        issues = []
+        if re.search(r"(?i)https?://|خلاصه منبع|پیش.?نمایش|پیامی ارسال نشد|no telegram message|dry.?run|منابع:", candidate):
+            issues.append("هیچ منبع، لینک، نام رسانه یا متن داخلی نیاور")
+        forbidden_ranges = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0x3040, 0x30FF), (0xAC00, 0xD7AF),
+                            (0x0400, 0x052F), (0x0900, 0x097F))
+        if any(lo <= ord(ch) <= hi for ch in candidate for lo, hi in forbidden_ranges):
+            issues.append("تمام واژه‌ها و نویسه‌های چینی، ژاپنی، کره‌ای، روسی و هندی را به فارسی طبیعی برگردان")
+        latin_words = re.findall(r"(?<![A-Za-z])[A-Za-z]+(?:=[A-Za-z])?(?![A-Za-z])", candidate)
+        allowed_terms = {"SI=F", "SLV", "SIVR", "PSLV", "RSI", "NAV"}
+        if any(word.upper() not in allowed_terms for word in latin_words):
+            issues.append("تمام واژه‌های انگلیسی را فارسی کن؛ فقط نماد ضروری SI=F، SLV، SIVR، PSLV، RSI و NAV مجازند")
+        if len(candidate) < 650 or sum(1 for ch in candidate if 0x0600 <= ord(ch) <= 0x06FF) < 180:
+            issues.append("تحلیل فارسی را به اندازه کافی گسترش بده و ۳ تا ۵ پاراگراف تحلیلی بنویس")
+        if len(candidate) > 3100:
+            issues.append("متن را به حداکثر ۳۱۰۰ نویسه کاهش بده و تحلیل‌های تکراری را حذف کن")
+        if re.search(r"(?i)\b(quá|diversification|ETF)\b|可能|影响", candidate):
+            issues.append("اصطلاحات بیگانه را کاملاً به فارسی طبیعی تبدیل کن")
+        return issues
+
+    text = ask([{"role": "system", "content": system}, {"role": "user", "content": user}])
+    issues = quality_issues(text)
+    if issues:
+        repair_system = (
+            "تو ویراستار نهایی سخت‌گیر کانال مالی فارسی هستی. متن نامناسب را اصلاح کن. "
+            "همه نویسه‌های چینی/ژاپنی/کره‌ای/روسی/هندی و واژه‌های انگلیسی را به فارسی روان تبدیل کن؛ "
+            "هیچ منبع، نام رسانه، لینک یا متن داخلی نیاور. تیتر و چند نکته کلیدی باید برجسته‌پذیر باشند، "
+            "چند ایموجی مرتبط به‌جا استفاده کن. اعداد و به‌ویژه علامت مثبت/منفی بازده‌ها را تغییر نده، "
+            "هیچ داده‌ای نساز و تحلیل را حرفه‌ای نگه دار. خروجی فقط متن نهایی باشد."
+        )
+        repair_user = (
+            f"دسته: {label}\nایرادهای شناسایی‌شده: {'؛ '.join(issues)}\n"
+            f"داده‌های اصلی برای کنترل دقت:\n{source[:12000]}\n\n"
+            f"متن نیازمند اصلاح:\n{text}\n\n"
+            "متن را کامل اصلاح کن و فقط نسخه نهایی را برگردان."
+        )
+        text = ask([{"role": "system", "content": repair_system}, {"role": "user", "content": repair_user}], 1200)
+        issues = quality_issues(text)
+    if issues:
+        raise RuntimeError("خروجی پس از یک دور اصلاح هنوز از کنترل کیفیت عبور نکرد؛ انتشار امن متوقف شد: " + "؛ ".join(issues))
     return text
 
 def html_format(text, label):
