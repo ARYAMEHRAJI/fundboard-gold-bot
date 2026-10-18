@@ -39,6 +39,7 @@ def main():
    # Omit missing or stale series; do not publish exception strings.
    continue
  lines += ["","📰 خبرهای تازه درباره عرضه و تقاضای نقره"]
+ items=[]
  try:
   root=ET.fromstring(get(RSS)); items=[]; seen=set()
   for item in root.findall(".//item"):
