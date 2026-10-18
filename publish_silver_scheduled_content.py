@@ -128,7 +128,7 @@ def cloudflare_edit(source, label):
         req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
         last_error = None
-        for attempt in range(4):
+        for attempt in range(2):
             try:
                 with urllib.request.urlopen(req, timeout=45) as response:
                     result = json.loads(response.read().decode("utf-8"))
@@ -138,9 +138,9 @@ def cloudflare_edit(source, label):
                 return str(answer).strip()
             except urllib.error.HTTPError as exc:
                 last_error = exc
-                if exc.code not in (429, 500, 502, 503, 504) or attempt == 3:
+                if exc.code not in (429, 500, 502, 503, 504) or attempt == 1:
                     raise
-                delay = 15 * (attempt + 1)
+                delay = 8 * (attempt + 1)
                 print(f"AI service temporarily unavailable (HTTP {exc.code}); retrying in {delay}s.")
                 time.sleep(delay)
         raise last_error
@@ -219,7 +219,54 @@ def cloudflare_edit(source, label):
                 break
         return issues
 
-    text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
+    def deterministic_fallback():
+        # If the hosted model is rate-limited, create a cautious, data-anchored Persian post rather than publishing raw headlines.
+        data_lines = []
+        seen_lines = set()
+        for raw_line in source.splitlines():
+            clean_line = sanitize(raw_line)
+            if len(clean_line) < 12 or not re.search(r"[۰-۹0-9]", clean_line):
+                continue
+            if not re.search(r"[\u0600-\u06FF]", clean_line):
+                continue
+            if re.search(r"منبع|تاریخ گزارش|زمان گزارش|زمان تهیه|پیش.?نمایش|خطا|داده کافی", clean_line):
+                continue
+            clean_line = clean_line[:155].strip(" •-")
+            if clean_line and clean_line not in seen_lines:
+                seen_lines.add(clean_line)
+                data_lines.append(clean_line)
+            if len(data_lines) >= 5:
+                break
+        opening = {
+            "technical": "📊 تحلیل تکنیکال: جایگاه قیمت نسبت به میانگین‌های کوتاه‌مدت و میان‌مدت، برای تشخیص جهت روند از تغییر یک‌روزه مهم‌تر است.",
+            "periodic": "📈 تحلیل بازدهی: بازده‌های کوتاه‌مدت و بلندمدت ممکن است تصویر متفاوتی بدهند؛ افت چند هفته‌ای لزوماً عملکرد یک‌ساله را توضیح نمی‌دهد.",
+            "news": "📰 تحلیل اخبار: تیتر خبری به‌تنهایی رابطه علت‌ومعلولی را ثابت نمی‌کند. خبرهای قیمت خرده‌فروشی یک شهر یا کشور را نباید معادل روند جهانی نقره دانست.",
+            "comparison": "⚖️ مقایسه طلا و نقره: نسبت قیمت دو فلز فقط یک شاخص نسبی است؛ برای نتیجه‌گیری باید بازده در بازه زمانی و ارز پایه یکسان مقایسه شود.",
+            "macro": "🌍 تحلیل بنیادی: نقره هم دارایی سرمایه‌گذاری است و هم فلزی صنعتی؛ دلار، نرخ‌های واقعی، تقاضای صنایع و عرضه معادن باید در کنار هم بررسی شوند.",
+            "education": "📚 نکته آموزشی: برای ارزیابی ابزارهای سرمایه‌گذاری نقره، ساختار محصول، هزینه، نقدشوندگی و اختلاف قیمت بازار با ارزش دارایی‌ها را کنار هم بسنجید.",
+            "briefing": "🧭 جمع‌بندی بازار: قیمت، روند تکنیکال، بازده دوره‌ای و اخبار را جداگانه بررسی کنید؛ اختلاف زمان ثبت داده‌ها می‌تواند مقایسه را گمراه‌کننده کند.",
+        }.get(SCHEDULE, "📊 تحلیل بازار نقره: داده‌ها باید با توجه به بازه زمانی، واحد و ساختار دارایی تفسیر شوند.")
+        lines = [opening, ""]
+        if data_lines:
+            lines.append("📌 داده‌های قابل استفاده در این گزارش:")
+            lines.extend("• " + x for x in data_lines)
+            lines.append("")
+        lines.append(
+            "🔎 برداشت تحلیلی: هیچ عدد یا خبر منفردی جهت قطعی قیمت را تعیین نمی‌کند. برای سناریوی صعودی باید بهبود تقاضا یا تثبیت قیمت با شواهد مستقل تأیید شود؛ "
+            "در سناریوی نزولی، ضعف تقاضا، تشدید شرایط مالی یا شکست محدوده‌های حمایتی می‌تواند فشار را بیشتر کند. این سناریوها شرطی‌اند، نه پیش‌بینی قطعی."
+        )
+        lines.append("")
+        lines.append(
+            "⚠️ محدودیت و ریسک: قیمت قرارداد آتی الزاماً با قیمت نقدی برابر نیست و بازده ابزارهای مختلف نیز به ساختار، هزینه و ارز پایه وابسته است. "
+            "اگر داده‌ای در دسترس نباشد، نباید با عدد تخمینی جایگزین شود. برای تصمیم‌گیری، تاریخ داده‌ها و هم‌خوانی شاخص‌ها را بررسی کنید."
+        )
+        return "\n".join(lines)
+
+    try:
+        text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
+    except Exception as exc:
+        print(f"WARNING: AI editing unavailable ({type(exc).__name__}); using conservative Persian fallback.")
+        text = deterministic_fallback()
     text = sanitize(text)
     issues = quality_issues(text)
     for attempt in range(1, 2):
