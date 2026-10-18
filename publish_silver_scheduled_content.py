@@ -113,16 +113,16 @@ def html_format(text, label):
     if headline == label: headline = '📊 ' + label
     out = [f'<b>{html.escape(headline, quote=False)}</b>', '']
     important = re.compile(r'^(🔎|🧭|📌|📈|📉|⚖️|💡|🌍|🥈|⚠️|📰|🏭|📉|سناریوی مثبت|سناریوی منفی|جمع‌بندی|برداشت تحلیلی|نتیجه‌گیری|نکته کلیدی|مهم‌ترین نکته|چرا مهم است|چه چیزی را باید رصد کرد)')
-    metric = re.compile(r'^([•▪🔹-]\\s*[^:：]{2,35}[:：])')
+    metric = re.compile(r'^([•▪🔹-]\s*[^:：]{2,35}[:：])')
     for line in lines:
         if not line: out.append(''); continue
         safe = html.escape(line, quote=False)
         if important.match(line): safe = f'<b>{safe}</b>'
         else:
-            safe = metric.sub(r'<b>\\1</b>', safe)
-            safe = re.sub(r'^(نکته مهم|در سناریوی صعودی|در سناریوی نزولی|ریسک اصلی|جمع‌بندی نهایی)(:)', r'<b>\\1\\2</b>', safe)
+            safe = metric.sub(r'<b>\1</b>', safe)
+            safe = re.sub(r'^(نکته مهم|در سناریوی صعودی|در سناریوی نزولی|ریسک اصلی|جمع‌بندی نهایی)(:)', r'<b>\1\2</b>', safe)
         out.append(safe)
-    result = '\\n'.join(out).strip()
+    result = '\n'.join(out).strip()
     if len(result) > MAX_LEN: raise RuntimeError('متن تحلیل از حد مجاز تلگرام بلندتر است؛ انتشار متوقف شد.')
     return result
 
