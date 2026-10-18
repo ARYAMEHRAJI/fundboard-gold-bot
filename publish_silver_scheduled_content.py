@@ -125,7 +125,7 @@ def cloudflare_edit(source, label):
         req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
         last_error = None
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 with urllib.request.urlopen(req, timeout=45) as response:
                     result = json.loads(response.read().decode("utf-8"))
@@ -135,9 +135,9 @@ def cloudflare_edit(source, label):
                 return str(answer).strip()
             except urllib.error.HTTPError as exc:
                 last_error = exc
-                if exc.code not in (429, 500, 502, 503, 504) or attempt == 1:
+                if exc.code not in (429, 500, 502, 503, 504) or attempt == 2:
                     raise
-                delay = 8 * (attempt + 1)
+                delay = 25 * (attempt + 1)
                 print(f"AI service temporarily unavailable (HTTP {exc.code}); retrying in {delay}s.")
                 time.sleep(delay)
         raise last_error
@@ -222,9 +222,7 @@ def cloudflare_edit(source, label):
 
     try:
         text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
-    except Exception as exc:
-        print(f"WARNING: AI editing unavailable ({type(exc).__name__}); using conservative Persian fallback.")
-        text = deterministic_fallback()
+    text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
     text = sanitize(text)
     issues = quality_issues(text)
     for attempt in range(1, 2):
@@ -246,8 +244,7 @@ def cloudflare_edit(source, label):
             text = ask([{'role': 'system', 'content': repair_system}, {'role': 'user', 'content': repair_user}], 1400)
             text = sanitize(text)
         except Exception as exc:
-            print(f"WARNING: AI repair unavailable ({type(exc).__name__}); using conservative Persian fallback.")
-            text = sanitize(deterministic_fallback())
+            raise RuntimeError(f"هوش مصنوعی نتوانست متن را اصلاح کند؛ انتشار متوقف شد ({type(exc).__name__}).")
         issues = quality_issues(text)
     if issues:
         raise RuntimeError('متن پس از سه مرحله بازبینی از کنترل کیفیت عبور نکرد؛ برای جلوگیری از انتشار محتوای خراب متوقف شد: ' + '؛ '.join(issues))
