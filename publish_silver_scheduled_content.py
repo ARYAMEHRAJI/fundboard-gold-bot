@@ -220,8 +220,6 @@ def cloudflare_edit(source, label):
                     "📊 خبر زمانی برای تحلیل مفیدتر است که اندازه تغییر، زمان وقوع و اثر احتمالی آن بر عرضه یا تقاضا روشن باشد. تیترهایی مثل «افزایش تقاضا» بدون عدد یا جزئیات کافی نیستند؛ تغییر مشخص تولید یا آمار مصرف با دوره زمانی روشن، امکان مقایسه بهتری می‌دهد.")
         raise RuntimeError("هوش مصنوعی در دسترس نیست و برای این دسته متن جایگزین داده‌محور و قابل اتکا وجود ندارد؛ انتشار متوقف شد.")
 
-    try:
-        text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
     text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
     text = sanitize(text)
     issues = quality_issues(text)
