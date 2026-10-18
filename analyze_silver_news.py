@@ -13,7 +13,7 @@ from pathlib import Path
 TIMEOUT = 35
 MAX_AGE_HOURS = 36
 MAX_ARTICLES = 8
-QUERY = '("silver price" OR "silver futures" OR "silver ETF" OR "silver demand" OR "silver supply" OR "solar silver" OR "Silver Institute") when:2d'
+QUERY = '("silver price" OR "silver demand" OR "silver supply" OR "silver mine" OR "silver production" OR "solar silver" OR "Silver Institute") when:3d -India -Vietnam -Bundi -Kolkata -Delhi -Mumbai'
 RSS_URL = "https://news.google.com/rss/search?" + urllib.parse.urlencode({"q": QUERY, "hl": "en-US", "gl": "US", "ceid": "US:en"})
 OUTPUT = Path("silver_content_preview/news_analysis.html")
 
@@ -91,41 +91,33 @@ def main():
     try:
         articles = parse_news(fetch(RSS_URL))
     except Exception as exc:
-        articles = []
-        fetch_error = f"{type(exc).__name__}: {exc}"
-    else:
-        fetch_error = ""
-    analysis = None
-    ai_status = "No AI analysis: fewer than two fresh silver-relevant articles."
-    if len(articles) >= 2:
-        try:
-            analysis, ai_status = cloudflare_analysis(articles)
-        except Exception as exc:
-            ai_status = f"AI unavailable ({type(exc).__name__}); no AI claims were fabricated."
-    now = datetime.now(timezone.utc).isoformat()
-    lines = ["📰 فاندبورد نقره | رصد و تحلیل اخبار جهانی", f"زمان تولید UTC: {now}", ""]
-    if fetch_error:
-        lines += [f"دریافت خبر ناموفق بود: {fetch_error}", ""]
-    if analysis:
-        lines += ["🔎 تحلیل اثر احتمالی خبرها", analysis, "", f"وضعیت تحلیل: {ai_status}", ""]
-    else:
-        lines += ["🔎 جمع‌بندی تحلیلی", ai_status, "در نبود تحلیل معتبر، از نسبت‌دادن اثر قطعی به خبرها خودداری می‌شود.", ""]
-    lines.append("🗞️ خبرهای تازه و منابع")
-    if articles:
-        for i, a in enumerate(articles, 1):
-            lines.append(f"{i}. {a['title']} — {a['source']} | {a['published']} | {a['link']}")
-            if a["summary"]:
-                lines.append(f"   خلاصه منبع: {a['summary'][:350]}")
-    else:
-        lines.append("خبر واجد شرایطی دریافت نشد؛ این به معنی نبود خبر مرتبط نیست.")
-    lines += ["", "منبع خبرها: Google News RSS؛ زمان انتشار برای هر مورد درج شده است.",
-              "محدودیت: خبر و تحلیل ماشینی جایگزین داده قیمت یا گزارش رسمی عرضه و تقاضا نیست.",
-              "Dry-run only: no Telegram message was sent."]
-    report = "\n".join(lines)
+        raise SystemExit(f"دریافت خبرهای تازه نقره ناموفق بود: {type(exc).__name__}")
+    # Exclude local retail-price snippets that do not explain the global silver market.
+    filtered = []
+    for article in articles:
+        combined = (article["title"] + " " + article.get("summary", "")).casefold()
+        if any(term in combined for term in ("per kilogram in india", "india silver rate", "silver rate today in", "vietnam silver price", "bundi silver", "kolkata silver", "delhi silver", "mumbai silver")):
+            continue
+        filtered.append(article)
+    if not filtered:
+        raise SystemExit("خبر تازه و مرتبط با بازار جهانی نقره پیدا نشد؛ برای جلوگیری از انتشار خبر ساختگی، پست خبری ارسال نشد.")
+    lines = [
+        "📰 خبرهای تازه بازار جهانی نقره",
+        "خبرهای زیر درباره عرضه، تقاضای صنعتی، تولید معدنی یا ابزارهای سرمایه‌گذاری نقره‌اند.",
+        ""
+    ]
+    for article in filtered[:6]:
+        # The downstream Persian editor translates and analyzes the facts; omit source names, URLs and UTC timestamps.
+        published = article.get("published", "")[:10]
+        lines.append(f"تاریخ انتشار: {published}")
+        lines.append(f"تیتر خبر: {article['title']}")
+        if article.get("summary"):
+            lines.append(f"جزئیات خبر: {article['summary'][:700]}")
+        lines.append("")
+    report = "\n".join(lines).strip()
     OUTPUT.write_text(report, encoding="utf-8")
     print(report)
-    print(f"NEWS_COUNT: {len(articles)}")
-    print(f"AI_STATUS: {ai_status}")
+    print(f"NEWS_COUNT: {len(filtered[:6])}")
     print("TELEGRAM_MESSAGES_SENT: 0")
 
 
