@@ -80,7 +80,7 @@ def cloudflare_edit(source, label):
         payload = {"messages": messages, "max_tokens": max_tokens, "temperature": 0.1}
         req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=75) as response:
+        with urllib.request.urlopen(req, timeout=35) as response:
             result = json.loads(response.read().decode("utf-8"))
         answer = result.get("result", {}).get("response") or result.get("result", {}).get("output_text")
         if not answer or not str(answer).strip():
@@ -109,7 +109,7 @@ def cloudflare_edit(source, label):
         return issues
     text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
     issues = quality_issues(text)
-    for attempt in range(1, 4):
+    for attempt in range(1, 3)
         if not issues:
             break
         repair_system = (
