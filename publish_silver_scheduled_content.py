@@ -109,7 +109,7 @@ def cloudflare_edit(source, label):
         return issues
     text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
     issues = quality_issues(text)
-    for attempt in range(1, 3)
+    for attempt in range(1, 3):
         if not issues:
             break
         repair_system = (
