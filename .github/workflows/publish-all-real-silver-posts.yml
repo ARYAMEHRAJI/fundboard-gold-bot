@@ -2,7 +2,7 @@ name: Publish All Real FundBoard Silver Posts
 on:
   push:
     branches: [main]
-    paths: ["publish_all_real_silver_posts.py", "publish_silver_scheduled_content.py", ".github/workflows/publish-all-real-silver-posts.yml"]
+    paths: ["publish_all_real_silver_posts.py"]
 permissions:
   contents: read
 concurrency:
@@ -10,7 +10,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   publish-all:
-    if: false # temporary safety guard: do not publish all categories on workflow edits
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
