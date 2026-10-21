@@ -171,6 +171,27 @@ def cloudflare_edit(source, label):
         candidate = re.sub(r"\n[ \t]*\n(?:[ \t]*\n)+", "\n\n", candidate)
         return candidate.strip()
 
+    def normalize_headline(candidate):
+        # Make the first line publishable before quality checks; the formatter also
+        # adds an emoji later, but quality checks run earlier in this pipeline.
+        lines = candidate.strip().splitlines()
+        if not lines:
+            return candidate
+        first = lines[0].strip()
+        first = re.sub(r"^\s*(?:#{1,6}\s*|\*\*|\*)+", "", first)
+        first = re.sub(r"(?:\*\*|\*)+\s*$", "", first).strip()
+        if not first:
+            first = {"technical":"تحلیل تکنیکال نقره", "periodic":"بازدهی دوره‌ای بازار نقره",
+                     "news":"تازه‌ترین تحولات بازار نقره", "comparison":"مقایسه طلا و نقره",
+                     "macro":"عوامل بنیادی اثرگذار بر نقره", "education":"نکته آموزشی بازار نقره",
+                     "briefing":"جمع‌بندی بازار نقره"}.get(SCHEDULE, "تحلیل بازار نقره")
+        if not re.match(r"^[📊📉📈🥈🌍⚖️🧭💡📰🏭🔎📚💰]", first):
+            emoji = {"technical":"📊", "periodic":"📈", "news":"📰", "comparison":"⚖️",
+                     "macro":"🌍", "education":"📚", "briefing":"🧭"}.get(SCHEDULE, "🥈")
+            first = f"{emoji} {first}"
+        lines[0] = first
+        return "\\n".join(lines)
+
     def quality_issues(candidate):
         issues = []
         if re.search(r"(?i)https?://|خلاصه منبع|پیش.?نمایش|پیامی ارسال نشد|no telegram message|dry.?run|منابع:|زمان تولید UTC|زمان گزارش UTC", candidate):
@@ -221,7 +242,7 @@ def cloudflare_edit(source, label):
         raise RuntimeError("هوش مصنوعی در دسترس نیست و برای این دسته متن جایگزین داده‌محور و قابل اتکا وجود ندارد؛ انتشار متوقف شد.")
 
     text = ask([{'role': 'system', 'content': system}, {'role': 'user', 'content': user}], 1400)
-    text = sanitize(text)
+    text = normalize_headline(sanitize(text))
     issues = quality_issues(text)
     for attempt in range(1, 2):
         if not issues:
@@ -240,7 +261,7 @@ def cloudflare_edit(source, label):
         )
         try:
             text = ask([{'role': 'system', 'content': repair_system}, {'role': 'user', 'content': repair_user}], 1400)
-            text = sanitize(text)
+            text = normalize_headline(sanitize(text))
         except Exception as exc:
             raise RuntimeError(f"هوش مصنوعی نتوانست متن را اصلاح کند؛ انتشار متوقف شد ({type(exc).__name__}).")
         issues = quality_issues(text)
