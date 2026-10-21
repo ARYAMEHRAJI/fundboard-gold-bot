@@ -1,13 +1,20 @@
-name: FundBoard Silver Hourly Publications
+name: FundBoard Silver Daily Content
 
 on:
   schedule:
-    # Avoid the top-of-hour Actions queue congestion; keep the hourly cadence.
-    - cron: "17 * * * *"
+    # Iran time: 09:00, 10:30, 12:00, 14:00, 16:00, 18:00, 20:00
+    # Iran is UTC+3:30; GitHub cron uses UTC.
+    - cron: "30 5 * * *"
+    - cron: "0 7 * * *"
+    - cron: "30 8 * * *"
+    - cron: "30 10 * * *"
+    - cron: "30 12 * * *"
+    - cron: "30 14 * * *"
+    - cron: "30 16 * * *"
   workflow_dispatch:
     inputs:
       content_type:
-        description: "Post type (leave blank to select the next hourly category)"
+        description: "Post type (leave blank to select based on the current scheduled slot)"
         required: false
         type: choice
         options:
@@ -43,7 +50,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: python -m pip install requests beautifulsoup4 openpyxl
-      - name: Select content category for this hour
+      - name: Select one daily content category
         id: category
         shell: bash
         run: |
@@ -51,9 +58,17 @@ jobs:
             echo "key=${{ inputs.content_type }}" >> "$GITHUB_OUTPUT"
           else
             hour=$(date -u +%H)
-            index=$((10#$hour % 7))
-            categories=(technical news periodic comparison macro education briefing)
-            echo "key=${categories[$index]}" >> "$GITHUB_OUTPUT"
+            case "$hour" in
+              05) key=technical ;;
+              07) key=news ;;
+              08) key=periodic ;;
+              10) key=comparison ;;
+              12) key=macro ;;
+              14) key=education ;;
+              16) key=briefing ;;
+              *) key=technical ;;
+            esac
+            echo "key=$key" >> "$GITHUB_OUTPUT"
           fi
       - name: Generate and publish one Persian silver post
         env:
