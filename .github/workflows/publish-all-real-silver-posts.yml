@@ -1,8 +1,6 @@
 name: Publish All Real FundBoard Silver Posts
 on:
-  push:
-    branches: [main]
-    paths: ["publish_all_real_silver_posts.py"]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
