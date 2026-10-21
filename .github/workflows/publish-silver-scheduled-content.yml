@@ -57,15 +57,15 @@ jobs:
           if [ -n "${{ inputs.content_type }}" ]; then
             echo "key=${{ inputs.content_type }}" >> "$GITHUB_OUTPUT"
           else
-            hour=$(date -u +%H)
-            case "$hour" in
-              05) key=technical ;;
-              07) key=news ;;
-              08) key=periodic ;;
-              10) key=comparison ;;
-              12) key=macro ;;
-              14) key=education ;;
-              16) key=briefing ;;
+            schedule="${{ github.event.schedule }}"
+            case "$schedule" in
+              "30 5 * * *") key=technical ;;
+              "0 7 * * *") key=news ;;
+              "30 8 * * *") key=periodic ;;
+              "30 10 * * *") key=comparison ;;
+              "30 12 * * *") key=macro ;;
+              "30 14 * * *") key=education ;;
+              "30 16 * * *") key=briefing ;;
               *) key=technical ;;
             esac
             echo "key=$key" >> "$GITHUB_OUTPUT"
