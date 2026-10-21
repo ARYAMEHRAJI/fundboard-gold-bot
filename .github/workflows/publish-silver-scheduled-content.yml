@@ -2,7 +2,8 @@ name: FundBoard Silver Hourly Publications
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    # Avoid the top-of-hour Actions queue congestion; keep the hourly cadence.
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       content_type:
