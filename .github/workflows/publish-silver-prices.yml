@@ -9,8 +9,8 @@ on:
         type: boolean
         default: false
   schedule:
-    # Hourly at :35 UTC (15 minutes after the gold physical price workflow)
-    - cron: "35 8-15 * * *"
+    # Twice daily at 09:00 and 17:00 Iran time (UTC+3:30).
+    - cron: "30 5,13 * * *"
 
 permissions:
   contents: read
