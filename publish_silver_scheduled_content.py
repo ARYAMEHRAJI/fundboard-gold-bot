@@ -272,8 +272,8 @@ def cloudflare_edit(source, label):
 def html_format(text, label):
     # Some model responses arrive JSON/Markdown-escaped; normalize them before HTML conversion.
     # Otherwise Telegram displays literal "\\n", "\\*\\*" and "\\_" in the published post.
-    text = text.replace("\\\\r\\\\n", "\\n").replace("\\\\n", "\\n").replace("\\\\r", "\\n")
-    text = text.replace("\\\\*\\\\*", "**").replace("\\\\*", "*").replace("\\\\_", "_")
+    text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+    text = text.replace("\\*", "*").replace("\\_", "_").replace("\\[", "[").replace("\\]", "]")
     text = text.replace("\\\\[", "[").replace("\\\\]", "]")
     text = text.strip()
     # Remove accidental bold wrappers around the entire post; only meaningful phrases should be bold.
