@@ -34,9 +34,9 @@ def market_data():
 
 def money(v):
     if v is None: return "ناموجود"
-    if abs(v) >= 1000: return f"\${v:,.0f}"
-    if abs(v) >= 1: return f"\${v:,.2f}"
-    return f"\${v:,.5f}"
+    if abs(v) >= 1000: return "$" + f"{v:,.0f}"
+    if abs(v) >= 1: return "$" + f"{v:,.2f}"
+    return "$" + f"{v:,.5f}"
 
 def pct(v):
     return "ناموجود" if v is None else f"{v:+.2f}٪"
