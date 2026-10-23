@@ -21,12 +21,12 @@ function tehranParts(date = new Date()) {
 async function dispatchWorkflow(env, inputs) {
   if (!env.GITHUB_TOKEN) throw new Error("Missing GITHUB_TOKEN secret");
   const response = await fetch(
-    \`https://api.github.com/repos/\${OWNER}/\${REPO}/actions/workflows/\${WORKFLOW}/dispatches\`,
+    `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
     {
       method: "POST",
       headers: {
         "Accept": "application/vnd.github+json",
-        "Authorization": \`Bearer \${env.GITHUB_TOKEN}\`,
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "FundBoard-Crypto-Scheduler",
         "Content-Type": "application/json"
@@ -36,13 +36,13 @@ async function dispatchWorkflow(env, inputs) {
   );
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(\`GitHub dispatch failed (\${response.status}): \${body.slice(0, 400)}\`);
+    throw new Error(`GitHub dispatch failed (${response.status}): ${body.slice(0, 400)}`);
   }
 }
 
 async function dispatchOnce(env, key, inputs) {
   if (await env.SCHEDULE_KV.get(key)) return { skipped: true, key };
-  const lockKey = \`lock:\${key}\`;
+  const lockKey = `lock:${key}`;
   if (await env.SCHEDULE_KV.get(lockKey)) return { skipped: true, key, reason: "locked" };
   await env.SCHEDULE_KV.put(lockKey, "1", { expirationTtl: 180 });
   try {
@@ -75,8 +75,8 @@ export default {
 
   async scheduled(controller, env, ctx) {
     const p = tehranParts(new Date(controller.scheduledTime));
-    const date = \`\${p.year}-\${p.month}-\${p.day}\`;
-    const time = \`\${p.hour}:\${p.minute}\`;
+    const date = `${p.year}-${p.month}-${p.day}`;
+    const time = `${p.hour}:${p.minute}`;
     const contentSlots = {
       "09:00": "technical",
       "10:30": "news",
@@ -88,15 +88,15 @@ export default {
     };
     const tasks = [];
     if (contentSlots[time]) {
-      tasks.push(dispatchOnce(env, \`\${date}:content:\${time}\`, { content_type: contentSlots[time] }));
+      tasks.push(dispatchOnce(env, `${date}:content:${time}`, { content_type: contentSlots[time] }));
     }
     if (time === "09:00" || time === "17:00") {
-      tasks.push(dispatchOnce(env, \`\${date}:prices:\${time}\`, { content_type: "prices" }));
+      tasks.push(dispatchOnce(env, `${date}:prices:${time}`, { content_type: "prices" }));
     }
     if (!tasks.length) return;
     const results = await Promise.allSettled(tasks);
     const failures = results.filter(r => r.status === "rejected");
     console.log(JSON.stringify({ date, time, results: results.map(r => r.status === "fulfilled" ? r.value : String(r.reason)) }));
-    if (failures.length) throw new Error(\`\${failures.length} crypto task(s) failed at Tehran \${date} \${time}\`);
+    if (failures.length) throw new Error(`${failures.length} crypto task(s) failed at Tehran ${date} ${time}`);
   }
 };
