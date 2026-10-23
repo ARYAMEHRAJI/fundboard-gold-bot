@@ -1,0 +1,43 @@
+name: FundBoard Crypto Scheduled Content
+
+on:
+  workflow_dispatch:
+    inputs:
+      content_type:
+        description: "Choose exactly one crypto post type to publish"
+        required: true
+        type: choice
+        options:
+          - prices
+          - technical
+          - news
+          - periodic
+          - alts
+          - macro
+          - education
+          - briefing
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fundboard-crypto-publications
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_CRYPTO_BOT_TOKEN: ${{ secrets.TELEGRAM_CRYPTO_BOT_TOKEN }}
+      TELEGRAM_CRYPTO_CHANNEL_ID: "@FundBoard_Crypto"
+      CONTENT_TYPE: ${{ inputs.content_type }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install requests
+      - name: Generate and publish one crypto post
+        run: python publish_crypto_scheduled_content.py
